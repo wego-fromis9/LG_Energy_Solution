@@ -252,6 +252,28 @@
             cursor: pointer;
         }
 
+        /* Mission in Queue State */
+        .in-queue-mission {
+            background-color: rgba(0, 165, 229, 0.15) !important;
+            color: #007bb0 !important;
+            border-left: 4px solid #00a5e5;
+            opacity: 0.8;
+            cursor: not-allowed;
+        }
+
+        .in-queue-mission span {
+            font-weight: bold;
+        }
+
+        /* Real-time Waypoint Highlighting (Current Position) */
+        .active-waypoint-highlight {
+            background-color: rgba(0, 165, 229, 0.3) !important;
+            color: #005a82 !important;
+            font-weight: 800 !important;
+            border-left: 6px solid #00a5e5;
+            transition: all 0.3s ease;
+        }
+
         /* ===== Buttons ===== */
         .btn-mir,
         .btn-ur,

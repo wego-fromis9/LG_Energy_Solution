@@ -37,9 +37,11 @@ class MiRController {
         this.showGrid = false;
 
         this.imgWaypoint = new Image();
+        this.imgWaypoint.onload = () => this.drawMap(); // Redraw once loaded
         this.imgWaypoint.src = 'images/waypoint_icon.png';
         
         this.imgCharger = new Image();
+        this.imgCharger.onload = () => this.drawMap(); // Redraw once loaded
         this.imgCharger.src = 'images/charge_icon.png';
     }
 
@@ -283,7 +285,9 @@ class MiRController {
             }
         });
         
-        // Draw robot
+        /* // Draw robot - [DISABLED]
+        // Robot position is now handled exclusively by renderer.js on lidarCanvas 
+        // to prevent duplicate rendering on the screen.
         const rx = (this.state.x - ox) / r;
         const ry = h - ((this.state.y - oy) / r);
         const rad = this.state.theta * (Math.PI / 180);
@@ -308,7 +312,7 @@ class MiRController {
             this.setupCtx.closePath(); this.setupCtx.fill();
             this.setupCtx.strokeStyle = "#ffffff"; this.setupCtx.lineWidth = 1; this.setupCtx.stroke();
             this.setupCtx.restore();
-        }
+        } */
 
         // Resolution Text (Overlay)
         this.ctx.fillStyle = "rgba(255, 255, 255, 0.8)";

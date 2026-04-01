@@ -192,6 +192,12 @@ function pollTopicHeartbeats() {
 // -----------------------------------------------
 // LiDAR Scan & Robot Position Visualizer
 // -----------------------------------------------
+
+// [NEW] 유저 커스텀 화살표 이미지 로드
+const customArrowImg = new Image();
+// 💡 주의: 사용하실 이미지의 정확한 경로와 파일명으로 수정해 주세요! (예: 'images/image_74a9bc.png')
+customArrowImg.src = 'images/nav_arrow.png';
+
 async function fetchProtectiveScanAPI() {
     if (!currentMapId || !mapImgObj) return;
 
@@ -259,25 +265,36 @@ function drawProtectiveScanOverlay(img) {
             // 로봇이 바라보는 방향에 맞게 캔버스 회전 (-rad 적용: HTML Canvas Y축 반전 때문)
             ctx.rotate(-rad);
 
-            // 1. 라이다 이미지가 수신되었으면 로봇 중심으로 1:1 사이즈 렌더링
+            // 1. 라이다 이미지가 수신되었으면 로봇 중심으로 렌더링
             if (img) {
-                ctx.drawImage(img, -img.width / 2, -img.height / 2);
+                const scanRes = 0.05;
+                const mapRes = globalMapMeta.r || 0.05;
+                const scale = scanRes / mapRes;
+
+                // 이미지의 중심이 로봇의 현재 픽셀 위치(rx, ry)에 오도록 그림
+                ctx.drawImage(img, (-img.width / 2) * scale, (-img.height / 2) * scale, img.width * scale, img.height * scale);
             }
 
-            // 2. 로봇의 실시간 위치와 헤딩(방향)을 무조건 크고 명확하게 표출
-            // 로봇 베이스 (파란색 원)
-            ctx.fillStyle = 'rgba(0, 165, 229, 0.9)';
-            ctx.beginPath();
-            ctx.arc(0, 0, 12, 0, 2 * Math.PI);
-            ctx.fill();
+            // 2. 로봇의 실시간 위치와 헤딩(방향)을 직접 만든 이미지로 표출
+            if (customArrowImg.complete && customArrowImg.naturalHeight !== 0) {
+                // 커스텀 이미지 크기 설정 (원하는 크기로 조절하세요. 40x40 픽셀)
+                const iconSize = 40;
 
-            // 로봇 헤딩 방향 (빨간색 굵은 선)
-            ctx.strokeStyle = '#d32f2f';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(28, 0); // 로봇 전방으로 향하는 방향 지시선
-            ctx.stroke();
+                ctx.save();
+                // 💡 핵심: 첨부하신 이미지는 위쪽(↑)을 가리킵니다.
+                // 캔버스의 기본 전방은 오른쪽(→) 이므로 이미지를 시계방향으로 90도 회전시켜서 방향을 맞춰줍니다.
+                ctx.rotate(Math.PI / 2);
+
+                // 중심을 맞추기 위해 x, y를 각각 너비/높이의 절반만큼 빼서 그립니다.
+                ctx.drawImage(customArrowImg, -iconSize / 2, -iconSize / 2, iconSize, iconSize);
+                ctx.restore();
+            } else {
+                // 커스텀 이미지를 불러오는 중이거나 실패했을 때 보여줄 기본 폴백(파란 원)
+                ctx.fillStyle = '#4285F4';
+                ctx.beginPath();
+                ctx.arc(0, 0, 12, 0, 2 * Math.PI);
+                ctx.fill();
+            }
 
             ctx.restore();
         }
@@ -392,6 +409,7 @@ window.cmdRefreshSetupMap = async () => {
 // -----------------------------------------------
 let lastFetchedErrorId = -1;
 let lastFetchedMissionId = -1;
+let lastFetchedSysLogId = -1; // 추가: 시스템 전체 로그 트래킹용 ID
 let lastActiveErrorsCount = 0;
 let lastMissionQueueState = '';
 
@@ -523,10 +541,107 @@ window.pollDetailedLogs = async () => {
                         }
                     }
                 }
+
+                // UI 동기화 호출
+                syncMissionQueueUI(activeQueue);
             }
         }
     } catch (e) { }
+
+    // 4. System Log Polling (All Levels - 실시간 발생 로그 전체 기록)
+    try {
+        const sysLogRes = await fetch(`http://${host}/api/v2.0.0/log/sys_log`, { headers });
+        if (sysLogRes.ok) {
+            const logs = await sysLogRes.json();
+            if (Array.isArray(logs) && logs.length > 0) {
+                if (lastFetchedSysLogId === -1) {
+                    lastFetchedSysLogId = Math.max(...logs.map(l => l.id || 0));
+                } else {
+                    const newLogs = logs.filter(log => (log.id || 0) > lastFetchedSysLogId);
+                    if (newLogs.length > 0) {
+                        lastFetchedSysLogId = Math.max(...newLogs.map(l => l.id || 0));
+                        for (const log of newLogs) {
+                            // 로그 레벨에 따른 스타일 분류
+                            let level = "INFO";
+                            if (log.description && (log.description.includes("Error") || log.description.includes("Fail"))) level = "ERROR";
+                            else if (log.description && (log.description.includes("Warning") || log.description.includes("Warn"))) level = "WARN";
+
+                            const module = log.module || "System";
+                            const message = log.description || "Log entry";
+                            const timeStr = log.time ? new Date(log.time).toLocaleTimeString('ko-KR', { hour12: false }) : new Date().toLocaleTimeString('ko-KR', { hour12: false });
+
+                            appendLogRow('mirLogTbody', level, module, message, timeStr);
+                            // 미니 로그에도 업데이트
+                            logMirSystemData(message, level === "ERROR" ? "err" : level === "WARN" ? "warn" : "info");
+                        }
+                    }
+                }
+            }
+        }
+    } catch (e) { }
+
+    // 위치 기반 웨이포인트 하이라이팅 업데이트
+    updateWaypointHighlighting();
 };
+
+function syncMissionQueueUI(activeQueue) {
+    const box = document.getElementById('mirMissionListSetup');
+    if (!box) return;
+
+    const activeMissionGuids = new Set(activeQueue.map(m => {
+        // mission_id가 URL 형태(/api/v2.0.0/missions/...)일 경우 GUID만 추출
+        const parts = String(m.mission_id).split('/');
+        return parts[parts.length - 1];
+    }));
+
+    const rows = box.querySelectorAll('label.waypoint-item');
+    rows.forEach(row => {
+        const chk = row.querySelector('input[type="checkbox"]');
+        if (!chk) return;
+
+        const guid = chk.value;
+        if (activeMissionGuids.has(guid)) {
+            row.classList.add('in-queue-mission');
+            chk.disabled = true;
+            chk.checked = false; // 실행 중인 미션은 체크 해제 처리
+        } else {
+            row.classList.remove('in-queue-mission');
+            chk.disabled = false;
+        }
+    });
+}
+
+function updateWaypointHighlighting() {
+    if (!mirCtrl.map || !mirCtrl.map.waypoints) return;
+
+    const tolerance = 0.5; // 0.5 meters
+    let closestWp = null;
+    let minDist = Infinity;
+
+    mirCtrl.map.waypoints.forEach(wp => {
+        const dx = globalRobotPosition.x - wp.pos_x;
+        const dy = globalRobotPosition.y - wp.pos_y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < tolerance && dist < minDist) {
+            minDist = dist;
+            closestWp = wp;
+        }
+    });
+
+    // Dashboard UI (mirPositionsList) 하이라이팅
+    const posList = document.getElementById('mirPositionsList');
+    if (posList) {
+        const items = posList.querySelectorAll('.waypoint-item');
+        items.forEach(item => {
+            if (closestWp && item.dataset.guid === closestWp.guid) {
+                item.classList.add('active-waypoint-highlight');
+            } else {
+                item.classList.remove('active-waypoint-highlight');
+            }
+        });
+    }
+}
 
 // -----------------------------------------------
 // Mission List (Setup Tab)
@@ -581,6 +696,17 @@ window.fetchAndRenderUserMissions = async () => {
             div.appendChild(nameSpan);
             box.appendChild(div);
         });
+
+        // 초기 로드 시에도 현재 큐 상태와 동기화
+        try {
+            const host = getMirHost();
+            const res = await fetch(`http://${host}/api/v2.0.0/mission_queue`, { headers: getMirHeaders() });
+            if (res.ok) {
+                const missions = await res.json();
+                const activeQueue = missions.filter(m => m.state === 'Pending' || m.state === 'Executing' || m.state === 'Starting');
+                syncMissionQueueUI(activeQueue);
+            }
+        } catch (e) { }
     } catch (error) {
         box.innerHTML = `<div style="padding:10px; color:#e57373; font-size:11px;">로드 실패: ${error.message}</div>`;
     }
@@ -610,28 +736,28 @@ function updateMirPositionsList() {
     allPos.forEach(p => {
         const item = document.createElement('div');
         item.className = 'waypoint-item';
+        item.dataset.guid = p.guid; // 하이라이팅을 위해 GUID 저장
         item.innerHTML = `
             <span>${p.icon} ${p.name || 'Unnamed'}</span>
             <span style="font-size:9px; color:#555;">${p.label}</span>
         `;
-        // Clicking a waypoint shows the waypoint panel and highlights it
+        // Clicking a waypoint ONLY highlights it in the list/UI and pre-checks in Setup tab
+        // NO move command is triggered here.
         item.onclick = () => {
+            // Remove previous active user-selection
             document.querySelectorAll('#mirPositionsList .waypoint-item').forEach(el => el.classList.remove('active-item'));
             item.classList.add('active-item');
 
-            // Pre-check this waypoint in the waypoint panel
-            const panel = document.getElementById('waypointPanel');
-            if (panel) {
-                panel.style.display = 'flex';
-                // Check matching checkbox in waypointCheckboxList
-                const checkboxes = document.querySelectorAll('#waypointCheckboxList input[type="checkbox"]');
-                checkboxes.forEach(chk => {
-                    if (chk.value === p.guid) {
-                        chk.checked = true;
-                        handleCheckboxChange(chk, p.guid);
-                    }
-                });
-            }
+            // Scroll to the matching waypoint in the Setup panel if open
+            const checkboxes = document.querySelectorAll('#waypointCheckboxList input[type="checkbox"]');
+            checkboxes.forEach(chk => {
+                if (chk.value === p.guid) {
+                    chk.checked = true;
+                    handleCheckboxChange(chk, p.guid);
+                    // 브라우저 뷰포트 내로 스크롤
+                    chk.parentElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            });
         };
         elList.appendChild(item);
     });
