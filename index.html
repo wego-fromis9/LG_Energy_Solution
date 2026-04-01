@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Integrated Executive Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/ColladaLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/urdf-loader@0.12.1/umd/URDFLoader.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&family=Inter:wght@400;600;700&display=swap');
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f5f5f5;
+            color: #333333;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ===== Title Bar ===== */
+        .titlebar {
+            height: 35px;
+            background: #ffffff;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 15px;
+            -webkit-app-region: drag;
+            z-index: 1000;
+            flex-shrink: 0;
+        }
+
+        .titlebar-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: #00a5e5;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .titlebar-controls {
+            -webkit-app-region: no-drag;
+            display: flex;
+            gap: 5px;
+        }
+
+        .titlebar-btn {
+            background: transparent;
+            border: none;
+            color: #888;
+            width: 26px;
+            height: 26px;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 12px;
+            border-radius: 2px;
+        }
+
+        .titlebar-btn:hover {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .btn-close:hover {
+            background: #d32f2f !important;
+            border-color: #d32f2f;
+            color: #fff;
+        }
+
+        /* ===== Tab Bar ===== */
+        .tabbar {
+            display: flex;
+            gap: 0;
+            background: #fafafa;
+            border-bottom: 2px solid #ddd;
+            flex-shrink: 0;
+            -webkit-app-region: no-drag;
+        }
+
+        .tab-btn {
+            padding: 8px 24px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: #888;
+            transition: 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: #555;
+        }
+
+        .tab-btn.active {
+            color: #00a5e5;
+            border-bottom: 2px solid #00a5e5;
+            background: #ffffff;
+        }
+
+        /* ===== Tab Content ===== */
+        .tab-content {
+            display: none;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+
+        /* ===== Grid Layouts ===== */
+        .grid-main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            gap: 20px;
+            padding: 20px;
+            overflow: hidden;
+            background-color: #f0f0f0;
+        }
+
+        .grid-col {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .grid-logs {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr;
+            grid-template-rows: 1fr 1fr 1fr;
+            gap: 15px;
+            padding: 15px;
+            overflow: hidden;
+            background-color: #f0f0f0;
+        }
+
+        /* ===== Panel ===== */
+        .panel {
+            background: #ffffff;
+            border: 1px solid #dcdcdc;
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            overflow: hidden;
+            border-radius: 6px;
+        }
+
+        .panel[data-type="mir"],
+        .panel[data-type="center"],
+        .panel[data-type="ur"],
+        .panel[data-type="rosout"] {
+            border-top: 3px solid #00a5e5;
+        }
+
+        .panel-header {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #00a5e5;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-icon {
+            height: 24px;
+            width: auto;
+            margin-right: 10px;
+            vertical-align: middle;
+            border-radius: 3px;
+        }
+
+        .info-box {
+            background: #f9f9f9;
+            border: 1px solid #eee;
+            padding: 10px;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 11px;
+            color: #555;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .info-box span {
+            font-weight: bold;
+        }
+
+        /* ===== Waypoints & Lists ===== */
+        .list-box {
+            flex: 1;
+            background: #fdfdfd;
+            border: 1px solid #eee;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        .waypoint-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px;
+            cursor: pointer;
+            font-size: 12px;
+            border-bottom: 1px solid #f0f0f0;
+            color: #333;
+            transition: all 0.2s ease;
+        }
+
+        .waypoint-item:hover {
+            background: #f5f5f5;
+        }
+
+        .active-item {
+            color: #00a5e5 !important;
+            font-weight: 700 !important;
+            background-color: #e6f7ff !important;
+            border-left: 3px solid #00a5e5;
+        }
+
+        .waypoint-item input[type="checkbox"] {
+            margin-right: 10px;
+            accent-color: #00a5e5;
+            cursor: pointer;
+        }
+
+        /* ===== Buttons ===== */
+        .btn-mir,
+        .btn-ur,
+        .btn-danger,
+        .scenario-btn {
+            font-family: inherit;
+            background: #ffffff;
+            font-weight: 700;
+            text-transform: uppercase;
+            border-radius: 4px;
+            transition: 0.2s;
+            cursor: pointer;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .btn-img-icon {
+            height: 18px;
+            width: auto;
+        }
+
+        .btn-mir,
+        .btn-ur,
+        .scenario-btn {
+            height: 38px;
+            padding: 0 10px;
+            font-size: 12px;
+            border: 1px solid #00a5e5;
+            color: #00a5e5;
+        }
+
+        .btn-danger {
+            height: 38px;
+            padding: 0 10px;
+            font-size: 12px;
+            border: 1px solid #aaa;
+            color: #555;
+            background: #fdfdfd;
+        }
+
+        .btn-mir:hover,
+        .btn-ur:hover,
+        .scenario-btn:hover {
+            background: #00a5e5;
+            color: #ffffff;
+            border-color: #00a5e5;
+            box-shadow: 0 2px 6px rgba(0, 165, 229, 0.3);
+        }
+
+        .btn-danger:hover {
+            background: #666;
+            color: #ffffff;
+            border-color: #555;
+        }
+
+        /* ===== Map ===== */
+        .map-container {
+            flex: 1;
+            background: #fafafa;
+            border: 1px solid #eee;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 15px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #mapCanvas,
+        #setupMapCanvas {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* LiDAR overlay canvas */
+        .lidar-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            pointer-events: none;
+            mix-blend-mode: multiply;
+            /* 하얀 배경을 투명하게 처리해 맵과 융합 */
+            z-index: 10;
+        }
+
+        .overlay-layers {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            padding: 8px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .overlay-layers label {
+            display: flex;
+            align-items: center;
+            color: #333;
+            font-size: 11px;
+            cursor: pointer;
+            margin-bottom: 4px;
+            gap: 4px;
+        }
+
+        .overlay-layers label:last-child {
+            margin-bottom: 0;
+        }
+
+        /* ===== Detailed Log Tables ===== */
+        .log-table-container {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            background: #ffffff;
+            border: 1px solid #eee;
+            border-radius: 4px;
+        }
+
+        .log-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 10px;
+            table-layout: fixed;
+        }
+
+        .log-table thead tr {
+            border-bottom: 2px solid #ddd;
+            background: #f5f5f5;
+        }
+
+        .log-table thead td {
+            color: #555;
+            padding: 8px 8px;
+            text-transform: uppercase;
+            font-size: 9px;
+            font-weight: 700;
+        }
+
+        .log-table tbody tr {
+            border-bottom: 1px solid #f9f9f9;
+        }
+
+        .log-table tbody tr:hover {
+            background: #f0f8ff;
+        }
+
+        .log-table tbody td {
+            padding: 6px 8px;
+            vertical-align: top;
+            border-right: 1px solid #eee;
+            color: #333;
+        }
+
+        .log-table td:last-child {
+            border-right: none;
+        }
+
+        .log-table .col-lvl {
+            width: 80px;
+            font-weight: 800;
+        }
+
+        .log-table .col-mod {
+            width: 180px;
+            color: #00a5e5;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .log-table .col-msg {
+            color: #444;
+            word-break: break-all;
+        }
+
+        .log-table .col-time {
+            width: 100px;
+            color: #888;
+            text-align: right;
+        }
+
+        .lv-info {
+            color: #4ade80;
+        }
+
+        .lv-warn {
+            color: #facc15;
+        }
+
+        .lv-error {
+            color: #e57373;
+        }
+
+        .log-scroll-area {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        /* ===== Vision Viewport ===== */
+        #camera-feed {
+            width: 100%;
+            height: 180px;
+            background: #ebebeb;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            margin-bottom: 5px;
+            position: relative;
+        }
+
+        #camera-stream {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .telem-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 11px;
+            margin-bottom: 10px;
+        }
+
+        .telem-table tr {
+            border-bottom: 1px solid #eee;
+        }
+
+        .telem-table td {
+            padding: 8px 8px;
+            vertical-align: middle;
+        }
+
+        .telem-table td:first-child {
+            color: #777;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.4px;
+            width: 44%;
+            white-space: nowrap;
+        }
+
+        .telem-table td:last-child {
+            color: #333;
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        /* ===== Mini Logs (Fixed Layouts) ===== */
+        .mini-log {
+            background: #fafafa;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            padding: 8px;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 10px;
+            line-height: 1.5;
+            color: #555;
+            flex: 1 1 0;
+            height: 0;
+            overflow-y: auto;
+            margin-bottom: 0;
+        }
+
+        .mini-log .ml-line.err {
+            color: #e57373;
+        }
+
+        .mini-log .ml-line.ok {
+            color: #4ade80;
+        }
+
+        .mini-log .ml-line.warn {
+            color: #facc15;
+        }
+
+        .mini-log .ml-line.info {
+            color: #64b5f6;
+        }
+
+        /* ===== URDF Viewer ===== */
+        #urdf-viewer,
+        #urdf-viewer-setup {
+            flex: 1;
+            background: #ebebeb !important;
+            border: 1px solid #ddd !important;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+
+        .flex-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* ===== Scenario Grid ===== */
+        .scenario-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="titlebar">
+        <div class="titlebar-title"></div>
+        <div class="titlebar-controls">
+            <button class="titlebar-btn"
+                onclick="try{require('electron').ipcRenderer.send('minimize-window')}catch(e){}">&#8722;</button>
+            <button class="titlebar-btn btn-close"
+                onclick="try{require('electron').ipcRenderer.send('close-window')}catch(e){}">&#10005;</button>
+        </div>
+    </div>
+
+    <div class="tabbar">
+        <button class="tab-btn active" id="tabBtnSetup" onclick="switchTab('setup')"> Setup</button>
+        <button class="tab-btn" id="tabBtnMain" onclick="switchTab('main')"> Dashboard</button>
+        <button class="tab-btn logs" id="tabBtnLogs" onclick="switchTab('logs')"> Logs</button>
+    </div>
+
+    <!-- ==================== SETUP TAB ==================== -->
+    <div class="tab-content active" id="tabSetup">
+        <div class="grid-main">
+            <!-- Left Column: MiR -->
+            <div class="grid-col">
+                <div class="panel" data-type="mir">
+                    <div class="panel-header" style="padding-bottom: 5px;">
+                        <div><img src="images/mir_icon.jpeg" style="height: 32px; border-radius: 4px;"></div>
+                    </div>
+                    <div class="info-box" style="margin-bottom: 0;">
+                        <div>ROBOT: <span id="mirRobotNameSetup" style="color:#aaa;">Waiting</span></div>
+                        <div>S/N: <span id="mirSerialSetup" style="color:#aaa;">Waiting</span></div>
+                    </div>
+                </div>
+
+                <div class="panel" data-type="mir"
+                    style="flex: 0 0 200px; min-height: 200px; max-height: 200px; display: flex; flex-direction: column; overflow: hidden;">
+                    <div class="panel-header">
+                        <div><img src="images/error_icon.png" class="header-icon"> System Logs</div>
+                    </div>
+                    <div class="mini-log" id="systemLogSetup"></div>
+                </div>
+
+                <div class="panel" data-type="mir" style="flex:1; display:flex; flex-direction:column;">
+                    <div class="panel-header">
+                        <div><img src="images/mission_icon.png" class="header-icon"> Mission</div>
+                        <button class="titlebar-btn" onclick="fetchAndRenderUserMissions()"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        </button>
+                    </div>
+                    <div class="list-box" id="mirMissionListSetup"
+                        style="flex: 1; margin-bottom: 10px; font-family: 'Roboto Mono', monospace; font-size: 12px; min-height: 150px;">
+                    </div>
+                    <div class="flex-row">
+                        <button class="btn-mir" style="flex: 1;" onclick="cmdAddMissionToQueue()">Add</button>
+                        <button class="btn-danger" style="flex: 1;" onclick="cmdClearMissionQueue()">Clear All</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Column: Config & Map -->
+            <div class="grid-col">
+
+                <div class="panel" data-type="center" style="flex: 1; display:flex; flex-direction:column;">
+                    <div class="panel-header">
+                        <div><img src="images/slam_icon.png" class="header-icon"> Map</div>
+                        <button class="titlebar-btn" onclick="cmdRefreshSetupMap()"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        </button>
+                    </div>
+                    <div class="map-container" style="flex: 1; min-height: 250px; position:relative;">
+                        <div id="debugOverlaySetup"
+                            style="position:absolute; top:2px; left:2px; background:rgba(0,0,0,0.8); color:#0f0; padding:6px; font-family:monospace; font-size:10px; z-index:20; border-radius:4px; pointer-events:none; white-space:pre; min-width:200px; display:none;">
+                        </div>
+                        <canvas id="setupMapCanvas"></canvas>
+                        <!-- LiDAR Overlay Canvas -->
+                        <canvas id="lidarCanvasSetup" class="lidar-canvas" style="display:block;"></canvas>
+                        <div class="overlay-layers">
+                            <label><input type="checkbox" id="chkLidarSetup" checked
+                                    onchange="toggleLidar('setup', this.checked)"><img src="images/lidar_icon.png"
+                                    style="height:20px;"> LiDAR</label>
+                            <label><input type="checkbox" id="chkGridSetup"><img src="images/grid_icon.png"
+                                    style="height:20px;"> Grid</label>
+                        </div>
+                    </div>
+                    <div class="flex-row" style="margin-top: 10px;">
+                        <button class="btn-mir" style="flex: 1;" onclick="cmdAdjustRobotPosition()"><img
+                                src="images/filter_icon.png" class="header-icon">
+                            Adjust Position</button>
+                    </div>
+                </div>
+
+                <div class="panel" data-type="center">
+                    <div class="panel-header">
+                        <div><img src="images/connection_icon.png" class="header-icon"> ADDRESS</div>
+                    </div>
+                    <div style="margin-bottom: 0;">
+                        <input type="text" id="inputHost" value="192.168.12.20"
+                            style="width: 100%; padding: 10px; background: #fff; color: #333; border: 1px solid #ccc; font-family: 'Roboto Mono', monospace; font-size: 14px; font-weight: bold; outline: none; border-radius: 4px;" />
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right Column: UR -->
+            <div class="grid-col">
+                <div class="panel" data-type="ur">
+                    <div class="panel-header" style="padding-bottom: 5px;">
+                        <div><img src="images/ur_icon.jpg" style="height: 32px; border-radius: 4px;"></div>
+                    </div>
+                    <div class="info-box" style="margin-bottom: 0;">
+                        <div>MODEL: <span id="urRobotNameSetup" style="color:#007acc">UR5e (Universal Robots)</span>
+                        </div>
+                        <div>S/N: <span id="urSerialSetup" style="color:#007acc">UR-2023-XXXX</span></div>
+                    </div>
+                </div>
+
+                <div class="panel" data-type="ur">
+                    <div class="panel-header">
+                        <div>Topics</div>
+                    </div>
+                    <table class="telem-table" style="flex:1; margin-top:5px;">
+                        <tbody>
+                            <tr>
+                                <td>logTopic</td>
+                                <td id="topic-log-setup" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>unlockTopic</td>
+                                <td id="topic-unlock-setup" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>estopTopic</td>
+                                <td id="topic-estop-setup" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>jointTopic</td>
+                                <td id="topic-joint-setup" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>rosoutTopic</td>
+                                <td id="topic-rosout-setup" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>cameraTopic</td>
+                                <td id="topic-camera-setup" style="color:#aaa;">Waiting</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="panel" data-type="ur" style="flex:1; display:flex; flex-direction:column;">
+                    <div class="panel-header">
+                        <div>3D Viewer</div>
+                    </div>
+                    <div id="urdf-viewer-setup" style="flex:1; margin-bottom:10px; min-height: 180px;"></div>
+                    <div class="flex-row">
+                        <button class="btn-ur" style="flex:1;" onclick="cmdUrUnlock()"><img src="images/unlock_icon.png"
+                                class="btn-img-icon"> Unlock</button>
+                        <button class="btn-danger" style="flex:1;" onclick="cmdSetInitialPosition()">Initial
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== MAIN DASHBOARD TAB ==================== -->
+    <div class="tab-content" id="tabMain">
+        <div class="grid-main">
+
+            <!-- Left Column: MiR -->
+            <div class="grid-col">
+                <div class="panel" data-type="mir">
+                    <div class="panel-header" style="padding-bottom: 5px;">
+                        <div><img src="images/mir_icon.jpeg" style="height: 32px; border-radius: 4px;"></div>
+                    </div>
+                    <table class="telem-table">
+                        <tbody>
+                            <tr>
+                                <td>State</td>
+                                <td id="mirStateText" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>Errors</td>
+                                <td id="mirErrorCount" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>Battery Level</td>
+                                <td id="mirBattery" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>Battery Time Left</td>
+                                <td id="mirBatteryTime" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>Uptime</td>
+                                <td id="mirUptime" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>Distance Moved</td>
+                                <td id="mirMoved" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>Mission Queue State:</td>
+                                <td id="mirMissionQueueState" style="color:#aaa;">Waiting</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="panel" data-type="mir"
+                    style="flex: 0 0 200px; min-height: 200px; max-height: 200px; display:flex; flex-direction:column; overflow: hidden;">
+                    <div class="panel-header">
+                        <div><img src="images/error_icon.png" class="header-icon"> System Logs</div>
+                    </div>
+                    <div class="mini-log" id="systemLogMain"></div>
+                </div>
+
+                <!-- MiR Positions List -->
+                <div class="panel" data-type="mir" style="flex:1; display:flex; flex-direction:column;">
+                    <div class="panel-header">
+                        <div><img src="images/waypoint_icon.png" class="header-icon"> waypoint</div>
+                        <button class="titlebar-btn" onclick="cmdRefreshSetupMap()"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        </button>
+                    </div>
+                    <div class="list-box" id="mirPositionsList"
+                        style="flex:1; margin-bottom:0; font-family: 'Roboto Mono', monospace; font-size:12px;"></div>
+                </div>
+
+                <!-- Waypoint section -->
+                <div class="panel" data-type="mir" id="waypointPanel" style="display:none;">
+                    <div class="panel-header">
+                        <div>Waypoint Sequence</div>
+                    </div>
+                    <div class="list-box" id="waypointCheckboxList"></div>
+                    <div class="flex-row">
+                        <button class="btn-mir" style="flex:1;" onclick="cmdRunCheckedWaypoints()">Run</button>
+                        <button class="btn-mir" id="btnPatrol" style="flex:1;"
+                            onclick="cmdTogglePatrolCheckbox()">Patrol</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Column: Map -->
+            <div class="grid-col">
+                <div class="panel" data-type="center" style="flex: 1; display:flex; flex-direction:column;">
+                    <div class="panel-header">
+                        <div><img src="images/slam_icon.png" class="header-icon"> Map</div>
+                        <button class="titlebar-btn" onclick="cmdRefreshSetupMap()"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        </button>
+                    </div>
+
+                    <div class="map-container" id="mapWrapper" style="position:relative;">
+                        <div id="debugOverlay"
+                            style="position:absolute; top:2px; left:2px; background:rgba(0,0,0,0.8); color:#0f0; padding:6px; font-family:monospace; font-size:10px; z-index:20; border-radius:4px; pointer-events:none; white-space:pre; min-width:200px; display:none;">
+                        </div>
+                        <canvas id="mapCanvas"></canvas>
+                        <!-- LiDAR Overlay Canvas -->
+                        <canvas id="lidarCanvas" class="lidar-canvas" style="display:block;"></canvas>
+                        <div class="overlay-layers">
+                            <label><input type="checkbox" id="chkWaypoint" checked> <img src="images/position_icon.png"
+                                    style="height:20px;"> Waypoint</label>
+                            <label><input type="checkbox" id="chkCharge" checked> <img
+                                    src="images/battery_charge_icon.png" style="height:20px;"> Charge</label>
+                            <label><input type="checkbox" id="chkLidar" checked
+                                    onchange="toggleLidar('main', this.checked)"><img src="images/lidar_icon.png"
+                                    style="height:20px;"> LiDAR</label>
+                            <label><input type="checkbox" id="chkGrid"><img src="images/grid_icon.png"
+                                    style="height:20px;"> Grid</label>
+                        </div>
+                    </div>
+
+                    <div class="flex-row" style="margin-top:10px; gap:8px;">
+                        <button class="btn-mir" style="flex:1;" onclick="cmdMirPlayPause()">Play/Pause</button>
+                        <button class="btn-mir" style="flex:1;" onclick="cmdMirDock()">Dock</button>
+                        <button class="btn-danger" style="flex:1;" onclick="cmdMirCancel()">Cancel</button>
+                        <button class="btn-danger" style="flex:1;" onclick="cmdMirClearErr()">Clear Error</button>
+                    </div>
+                </div>
+
+                <div class="panel" data-type="center">
+                    <div class="panel-header">
+                        <div><img src="images/scenario_icon.png" class="header-icon"> SCENARIO</div>
+                    </div>
+                    <div class="scenario-grid" id="scenarioGrid"></div>
+                </div>
+            </div>
+
+            <!-- Right Column: UR -->
+            <div class="grid-col">
+                <div class="panel" data-type="ur">
+                    <div class="panel-header" style="padding-bottom: 5px;">
+                        <div><img src="images/ur_icon.jpg" style="height: 32px; border-radius: 4px;"></div>
+                    </div>
+                    <table class="telem-table" style="flex:1; margin-top:5px;">
+                        <tbody>
+                            <tr>
+                                <td>states</td>
+                                <td id="topic-states-main" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>error</td>
+                                <td id="topic-error-main" style="color:#aaa;">Waiting</td>
+                            </tr>
+                            <tr>
+                                <td>e-stop</td>
+                                <td id="topic-estop-main" style="color:#aaa;">Waiting</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Vision System Feed -->
+                <div class="panel" data-type="ur" style="flex: 0 0 220px;">
+                    <div class="panel-header">
+                        <div><img src="images/camera_icon.png" class="header-icon"> CAMERA</div>
+                    </div>
+                    <div id="camera-feed">
+                        <img id="camera-stream" src="" onerror="this.style.display='none'" />
+                    </div>
+                    <button class="btn-mir" style="margin-top:2px;" onclick="cmdCaptureImage()"><img
+                            src="images/screenshot_icon.png" class="btn-img-icon"> Capture</button>
+                </div>
+
+                <div class="panel" data-type="ur" style="flex:1; display:flex; flex-direction:column;">
+                    <div class="panel-header">
+                        <div>3D Viewer</div>
+                    </div>
+                    <div id="urdf-viewer" style="flex:1; margin-bottom:10px; min-height: 180px;"></div>
+                    <div class="flex-row">
+                        <button class="btn-ur" style="flex:1;" onclick="cmdUrManualMode()">Manual Mode</button>
+                        <button class="btn-danger" style="flex:1;" onclick="cmdUrEstop()">E-Stop</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ==================== DETAILED LOGS TAB ==================== -->
+    <div class="tab-content" id="tabLogs">
+        <div class="grid-logs">
+            <!-- MiR System & Error Log -->
+            <div class="panel" data-type="mir">
+                <div class="panel-header" style="padding-bottom: 5px;">
+                    <div><img src="images/mir_icon.jpeg" style="height: 32px; border-radius: 4px;"></div>
+                    <div style="display:flex; gap:5px;">
+                        <button class="titlebar-btn" onclick="pollDetailedLogs()"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 5px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        </button>
+                        <button class="titlebar-btn" onclick="cmdSaveLog('mirLogTbody', 'MiR_Event_Logs')"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 5px; width:auto; height:auto; color:#4caf50; font-weight:bold;">💾
+                        </button>
+                        <button class="titlebar-btn" onclick="document.getElementById('mirLogTbody').innerHTML=''"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 5px; width:auto; height:auto; color:#d32f2f; font-weight:bold;">🗑
+                        </button>
+                    </div>
+                </div>
+                <div class="log-table-container">
+                    <table class="log-table">
+                        <thead>
+                            <tr>
+                                <td class="col-lvl">State</td>
+                                <td class="col-mod">Module</td>
+                                <td class="col-msg">Message</td>
+                                <td class="col-time">Time</td>
+                            </tr>
+                        </thead>
+                    </table>
+                    <div class="log-scroll-area">
+                        <table class="log-table">
+                            <tbody id="mirLogTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- UR ROS2 Topic Log -->
+            <div class="panel" data-type="ur">
+                <div class="panel-header" style="padding-bottom: 5px;">
+                    <div><img src="images/ur_icon.jpg" style="height: 32px; border-radius: 4px;"></div>
+                    <div style="display:flex; gap:5px;">
+                        <button class="titlebar-btn" onclick="pollDetailedLogs()"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        </button>
+                        <button class="titlebar-btn" onclick="cmdSaveLog('urLogTbody', 'UR_Topic_Logs')"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#4caf50; font-weight:bold;">💾
+                        </button>
+                        <button class="titlebar-btn" onclick="document.getElementById('urLogTbody').innerHTML=''"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#d18b00; font-weight:bold;">🗑
+                        </button>
+                    </div>
+                </div>
+                <div class="log-table-container">
+                    <table class="log-table">
+                        <thead>
+                            <tr>
+                                <td class="col-lvl">Level</td>
+                                <td class="col-mod">Node</td>
+                                <td class="col-msg">Message</td>
+                                <td class="col-time">Time</td>
+                            </tr>
+                        </thead>
+                    </table>
+                    <div class="log-scroll-area">
+                        <table class="log-table">
+                            <tbody id="urLogTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ROS2 /rosout Global Log -->
+            <div class="panel" data-type="rosout">
+                <div class="panel-header" style="padding-bottom: 5px;">
+                    <div><img src="images/system_serical_icon.png" style="height: 32px; border-radius: 4px;"></div>
+                    <div style="display:flex; gap:5px;">
+                        <button class="titlebar-btn" onclick="pollDetailedLogs()"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        </button>
+                        <button class="titlebar-btn" onclick="cmdSaveLog('rosoutTbody', 'ROS2_System_Log')"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#4caf50; font-weight:bold;">💾
+                        </button>
+                        <button class="titlebar-btn" onclick="document.getElementById('rosoutTbody').innerHTML=''"
+                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#9c27b0; font-weight:bold;">🗑
+                        </button>
+                    </div>
+                </div>
+                <div class="log-table-container">
+                    <table class="log-table">
+                        <thead>
+                            <tr>
+                                <td class="col-lvl">Level</td>
+                                <td class="col-mod">Node</td>
+                                <td class="col-msg">Message</td>
+                                <td class="col-time">Time</td>
+                            </tr>
+                        </thead>
+                    </table>
+                    <div class="log-scroll-area">
+                        <table class="log-table">
+                            <tbody id="rosoutTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+
+
+        </div>
+    </div>
+
+    <!-- Electron Custom Prompt Modal -->
+    <div id="customPromptOverlay"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
+        <div
+            style="background:#fff; padding:20px; border-radius:6px; width:300px; box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+            <h3 style="margin-top:0; font-size:15px; color:#333;">Adjust Position</h3>
+            <p style="font-size:12px; color:#666; margin-bottom:15px;">Verify or adjust the robot's X, Y, and Theta
+                coordinates.</p>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <label style="font-size:12px; color:#333; font-weight:bold;">X (m): <input type="number" step="0.01"
+                        id="promptX"
+                        style="width:100%; padding:6px; margin-top:4px; box-sizing:border-box; border:1px solid #ccc;"></label>
+                <label style="font-size:12px; color:#333; font-weight:bold;">Y (m): <input type="number" step="0.01"
+                        id="promptY"
+                        style="width:100%; padding:6px; margin-top:4px; box-sizing:border-box; border:1px solid #ccc;"></label>
+                <label style="font-size:12px; color:#333; font-weight:bold;">Theta (deg): <input type="number"
+                        step="0.01" id="promptTheta"
+                        style="width:100%; padding:6px; margin-top:4px; box-sizing:border-box; border:1px solid #ccc;"></label>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                <button onclick="closeCustomPrompt(false)"
+                    style="padding:6px 12px; border:1px solid #ccc; background:#f9f9f9; cursor:pointer; border-radius:4px; color:#333;">Cancel</button>
+                <button onclick="closeCustomPrompt(true)"
+                    style="padding:6px 12px; border:none; background:#00a5e5; color:#fff; cursor:pointer; border-radius:4px; font-weight:bold;">Snap</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Inline script for UI interactions to prevent ReferenceErrors if external scripts fail -->
+    <script>
+        function switchTab(tab) {
+            document.getElementById('tabSetup').classList.toggle('active', tab === 'setup');
+            document.getElementById('tabMain').classList.toggle('active', tab === 'main');
+            document.getElementById('tabLogs').classList.toggle('active', tab === 'logs');
+
+            document.getElementById('tabBtnSetup').classList.toggle('active', tab === 'setup');
+            document.getElementById('tabBtnMain').classList.toggle('active', tab === 'main');
+            document.getElementById('tabBtnLogs').classList.toggle('active', tab === 'logs');
+        }
+    </script>
+    <script src="./renderer.js"></script>
+</body>
+
+</html>

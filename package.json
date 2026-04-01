@@ -1,0 +1,41 @@
+{
+  "name": "limo-dashboard",
+  "version": "1.0.0",
+  "description": "limo dashboard for LIMO PRO",
+  "author": {
+    "name": "Jihyeok",
+    "email": "jh.yang@wego-robotics.com"
+  },
+  "homepage": "https://yourhomepage.com",
+  "dependencies": {
+    "three": "^0.183.2",
+    "urdf-loader": "^0.12.6",
+    "xterm": "^5.3.0"
+  },
+  "devDependencies": {
+    "electron": "^38.7.2",
+    "electron-builder": "^25.1.8"
+  },
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:arm": "electron-builder --linux --arm64"
+  },
+  "build": {
+    "appId": "com.yourapp.id",
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "maintainer": "Jihyeok <jihyeok@example.com>"
+    },
+    "icon": "dashboard.png",
+    "publish": {
+      "provider": "generic",
+      "url": "https://yourdomain.com/download/"
+    }
+  }
+}
