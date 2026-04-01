@@ -60,6 +60,15 @@ class URController {
     publishUnlock()     { this.publishBoolTrigger(config.ur.unlockTopic); }
     publishEstop()      { this.publishBoolTrigger(config.ur.estopTopic); }
 
+    // Publisher for scenario Float32 ID (e.g., /scenario_trigger)
+    publishScenarioById(id) {
+        const cmd = `bash -c "source /opt/ros/humble/setup.bash && ros2 topic pub --once ${config.ur.scenarioTopic} std_msgs/msg/Float32 '{data: ${id}}'"`;
+        exec(cmd, (err) => {
+            if(err) this._log(`[ERROR] 시나리오 호출 실패 (${id}): ${err.message}`);
+            else this._log(`[OK] Published Scenario ID ${id} -> ${config.ur.scenarioTopic}`);
+        });
+    }
+
     // Echo String Log Topic
     startLogSubscriber() {
         if (this.logProcess) return;

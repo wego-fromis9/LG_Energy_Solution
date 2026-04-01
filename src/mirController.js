@@ -37,12 +37,12 @@ class MiRController {
         this.showGrid = false;
 
         this.imgWaypoint = new Image();
-        this.imgWaypoint.onload = () => this.drawMap(); // Redraw once loaded
-        this.imgWaypoint.src = 'images/waypoint_icon.png';
+        this.imgWaypoint.onload = () => this.drawMap();
+        this.imgWaypoint.src = 'images/waypoint.png';
         
         this.imgCharger = new Image();
-        this.imgCharger.onload = () => this.drawMap(); // Redraw once loaded
-        this.imgCharger.src = 'images/charge_icon.png';
+        this.imgCharger.onload = () => this.drawMap();
+        this.imgCharger.src = 'images/charger.png';
     }
 
     init(canvasElement, logCallback, statusCallback, setupCanvasElement = null) {
@@ -285,35 +285,6 @@ class MiRController {
             }
         });
         
-        /* // Draw robot - [DISABLED]
-        // Robot position is now handled exclusively by renderer.js on lidarCanvas 
-        // to prevent duplicate rendering on the screen.
-        const rx = (this.state.x - ox) / r;
-        const ry = h - ((this.state.y - oy) / r);
-        const rad = this.state.theta * (Math.PI / 180);
-        
-        this.ctx.save();
-        this.ctx.translate(rx, ry);
-        this.ctx.rotate(-rad);
-        this.ctx.fillStyle = "#ff3333";
-        this.ctx.beginPath();
-        this.ctx.moveTo(14, 0); this.ctx.lineTo(-10, 8); this.ctx.lineTo(-5, 0); this.ctx.lineTo(-10, -8);
-        this.ctx.closePath(); this.ctx.fill();
-        this.ctx.strokeStyle = "#ffffff"; this.ctx.lineWidth = 1; this.ctx.stroke();
-        this.ctx.restore();
-
-        if (this.setupCtx) {
-            this.setupCtx.save();
-            this.setupCtx.translate(rx, ry);
-            this.setupCtx.rotate(-rad);
-            this.setupCtx.fillStyle = "#ff3333";
-            this.setupCtx.beginPath();
-            this.setupCtx.moveTo(14, 0); this.setupCtx.lineTo(-10, 8); this.setupCtx.lineTo(-5, 0); this.setupCtx.lineTo(-10, -8);
-            this.setupCtx.closePath(); this.setupCtx.fill();
-            this.setupCtx.strokeStyle = "#ffffff"; this.setupCtx.lineWidth = 1; this.setupCtx.stroke();
-            this.setupCtx.restore();
-        } */
-
         // Resolution Text (Overlay)
         this.ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
         this.ctx.font = "bold 11px Roboto Mono, monospace";
