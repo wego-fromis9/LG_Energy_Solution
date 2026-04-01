@@ -203,13 +203,14 @@ function updateTopicStatus(id, isAlive, value) {
 function pollTopicHeartbeats() {
     const hb = urCtrl.lastHeartbeat;
     const now = new Date();
-    const alive = (ts) => ts && (now - ts) < 5000;
+    // Use 5s for high-frequency topics, 60s for event-driven log topics
+    const alive = (ts, timeout = 5000) => ts && (now - ts) < timeout;
 
-    updateTopicStatus('topic-log-setup', alive(hb.log), config.ur.logTopic);
+    updateTopicStatus('topic-log-setup', alive(hb.log, 60000), config.ur.logTopic);
     updateTopicStatus('topic-unlock-setup', true, config.ur.unlockTopic);
     updateTopicStatus('topic-estop-setup', true, config.ur.estopTopic);
     updateTopicStatus('topic-joint-setup', alive(hb.joint), config.ur.jointTopic);
-    updateTopicStatus('topic-rosout-setup', alive(hb.rosout), config.ur.rosoutTopic);
+    updateTopicStatus('topic-rosout-setup', alive(hb.rosout, 60000), config.ur.rosoutTopic);
     updateTopicStatus('topic-camera-setup', alive(hb.camera), config.ur.cameraTopic);
 }
 
@@ -1061,8 +1062,16 @@ window.onload = () => {
         if (extra && extra.positionsLoaded) { updateWaypointCheckboxes(); updateMirPositionsList(); }
     }, document.getElementById('setupMapCanvas'));
 
-    urCtrl.startLogSubscriber();
+    // [HEARTBEAT & LOG FIX] High-timeout for sporadically publishing logs
+    urCtrl.startLogSubscriber((msg) => {
+        if (urCtrl.lastHeartbeat) urCtrl.lastHeartbeat.log = new Date();
+        const level = msg.toLowerCase().includes("error") ? "ERROR" : "INFO";
+        const text = msg.msg || msg;
+        appendLogRow('urLogTbody', level, 'UR_Node', text);
+    });
+
     urCtrl.startRosoutSubscriber((msg) => {
+        if (urCtrl.lastHeartbeat) urCtrl.lastHeartbeat.rosout = new Date();
         const level = msg.toLowerCase().includes("error") ? "ERROR" : "INFO";
         appendLogRow('rosoutTbody', level, 'ros', msg);
     });

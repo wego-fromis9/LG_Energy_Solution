@@ -70,7 +70,7 @@ class URController {
     }
 
     // Echo String Log Topic
-    startLogSubscriber() {
+    startLogSubscriber(callback) {
         if (this.logProcess) return;
         
         this._log(`[INFO] UR 로그 수신을 시작합니다. (${config.ur.logTopic})`);
@@ -81,8 +81,10 @@ class URController {
             const lines = d.toString().split('\n');
             lines.forEach(l => {
                 if (l.includes('data:')) {
+                    const text = l.replace('data:', '').trim().replace(/['"]/g, '');
                     this.lastHeartbeat.log = new Date();
-                    this._log(`[UR log] ${l.replace('data:', '').trim()}`);
+                    if (callback) callback(text);
+                    this._log(`[UR log] ${text}`);
                 }
             });
         });
