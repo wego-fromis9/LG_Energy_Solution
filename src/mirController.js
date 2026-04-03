@@ -38,11 +38,11 @@ class MiRController {
 
         this.imgWaypoint = new Image();
         this.imgWaypoint.onload = () => this.drawMap();
-        this.imgWaypoint.src = 'images/waypoint.png';
-        
+        this.imgWaypoint.src = 'images/position_icon.png'; // Correct path
+
         this.imgCharger = new Image();
         this.imgCharger.onload = () => this.drawMap();
-        this.imgCharger.src = 'images/charger.png';
+        this.imgCharger.src = 'images/battery_charge_icon.png'; // Correct path
     }
 
     init(canvasElement, logCallback, statusCallback, setupCanvasElement = null) {
@@ -200,21 +200,25 @@ class MiRController {
             if (!res.ok) return;
             const posList = await res.json();
 
-            // Fetch details in parallel for positions
-            const detailPromises = posList.map(async p => {
-                if (!p.guid) return null;
-                const dRes = await fetch(`${this.getBaseUrl()}/positions/${p.guid}`, { headers: this.getAuthHeader() });
-                if (dRes.ok) return await dRes.json();
-                return null;
-            });
-            const detailedPositions = (await Promise.all(detailPromises)).filter(p => p !== null);
+            // REAL MIR API FIX: Fetch deep coordinates sequentially to prevent server connection drops
+            const detailedPositions = [];
+            for (const p of posList) {
+                if (!p.guid) continue;
+                try {
+                    const dRes = await fetch(`${this.getBaseUrl()}/positions/${p.guid}`, { headers: this.getAuthHeader() });
+                    if (dRes.ok) detailedPositions.push(await dRes.json());
+                } catch(err) { /* ignore single drop */ }
+            }
 
             this.map.positions = detailedPositions;
-            this.map.waypoints = this.map.positions.filter(p => p.type_id === 0);
+            // Include standard waypoints (0) and robot positions (11)
+            this.map.waypoints = this.map.positions.filter(p => p.type_id === 0 || p.type_id === 11);
             this.map.chargers = this.map.positions.filter(p => p.type_id === 7);
 
             if (this.onStatusUpdate) this.onStatusUpdate(this.state, { positionsLoaded: true });
-        } catch (e) { }
+        } catch (e) {
+            console.error("[MiR API] updatePositions Error:", e);
+        }
     }
 
     drawMap() {

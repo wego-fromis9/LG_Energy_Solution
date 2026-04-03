@@ -36,6 +36,9 @@ let isUrEstop = false;
 let isUrUnlock = false;
 let isUrInitial = false;
 
+// Mission optimistic UI state
+let optimisticMissions = new Set();
+
 // Notification System State
 let notifications = [];
 let unreadCount = 0;
@@ -476,22 +479,23 @@ window.cmdRefreshSetupMap = async () => {
         if (!stat.map_id) return logMirSystemData("활성화된 맵이 없습니다.", "warn");
         currentMapId = stat.map_id;
 
-        const posRes = await fetch(`http://${host}/api/v2.0.0/maps/${currentMapId}/positions`, { headers });
-        if (!posRes.ok) throw new Error(`Positions ${posRes.status}`);
-        const positions = await posRes.json();
+        // LET MIR CONTROLLER FETCH DETAILED POSITIONS (WITH X,Y COORDINATES)
+        await mirCtrl.updatePositions(currentMapId);
 
         const mapDataRes = await fetch(`http://${host}/api/v2.0.0/maps/${currentMapId}`, { headers });
         if (!mapDataRes.ok) throw new Error(`Map Data ${mapDataRes.status}`);
         const mapData = await mapDataRes.json();
 
-        if (!mirCtrl.map) mirCtrl.map = {};
         mirCtrl.map.currentId = currentMapId;
-        mirCtrl.map.waypoints = positions.filter(p => p.type_id === 0 || p.type_id === 11);
-        mirCtrl.map.chargers = positions.filter(p => p.type_id === 7 || p.type_id === 8);
 
+        // [CRITICAL FIX] Sync metadata to BOTH renderer and the drawing controller
         globalMapMeta.r = mapData.resolution || 0.05;
         globalMapMeta.ox = mapData.origin_x || 0;
         globalMapMeta.oy = mapData.origin_y || 0;
+
+        mirCtrl.map.resolution = globalMapMeta.r;
+        mirCtrl.map.originX = globalMapMeta.ox;
+        mirCtrl.map.originY = globalMapMeta.oy;
 
         const b64Raw = mapData.map || mapData.base_map;
         if (b64Raw) {
@@ -503,12 +507,9 @@ window.cmdRefreshSetupMap = async () => {
                 globalMapMeta.w = img.width;
                 globalMapMeta.h = img.height;
 
-                // Pass data back to controller and let it draw the waypoints/chargers
                 mirCtrl.map.baseImage = img;
-                mirCtrl.map.positions = positions;
-                mirCtrl.drawMap();
-
-                logMirSystemData(`맵 렌더링 완료 (${positions.length}개 위치)`, "ok");
+                mirCtrl.drawMap(); // Will now calculate px/py perfectly
+                logMirSystemData(`맵 렌더링 완료`, "ok");
             };
         }
 
@@ -643,7 +644,7 @@ window.pollDetailedLogs = () => {
             const missRes = await fetch(`http://${host}/api/v2.0.0/mission_queue`, { headers });
             if (missRes.ok) {
                 const missions = await missRes.json();
-                if (Array.isArray(missions) && missions.length > 0) {
+                if (Array.isArray(missions)) { // REMOVED length > 0 CHECK
                     const activeQueue = missions.filter(m => m.state === 'Pending' || m.state === 'Executing' || m.state === 'Starting');
                     const elState = document.getElementById('mirMissionQueueState');
                     if (elState) {
@@ -666,30 +667,32 @@ window.pollDetailedLogs = () => {
                         }
                     }
 
-                    if (lastFetchedMissionId === -1) {
-                        lastFetchedMissionId = Math.max(...missions.map(m => m.id || 0));
-                    } else {
-                        const newMissions = missions.filter(m => (m.id || 0) > lastFetchedMissionId);
-                        if (newMissions.length > 0) {
-                            lastFetchedMissionId = Math.max(...newMissions.map(m => m.id || 0));
-                            for (const m of newMissions) {
-                                try {
-                                    const detailRes = await fetch(`http://${host}/api/v2.0.0/mission_queue/${m.id}`, { headers });
-                                    if (detailRes.ok) {
-                                        const detail = await detailRes.json();
-                                        const state = detail.state || 'Unknown';
-                                        let missionName = mirCtrl.getMissionName ? mirCtrl.getMissionName(detail.mission_id) : null;
-                                        if (!missionName) missionName = (detail.mission_id || 'Unknown').substring(0, 8);
-                                        const source = missionName;
-                                        const message = (detail.message || 'No message').substring(0, 40);
-                                        const timeStr = detail.finished || detail.started || new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                                        appendLogRow('mirLogTbody', `MISSION ${state}`, source, message, timeStr);
-                                    }
-                                } catch (e) { }
+                    if (missions.length > 0) {
+                        if (lastFetchedMissionId === -1) {
+                            lastFetchedMissionId = Math.max(...missions.map(m => m.id || 0));
+                        } else {
+                            const newMissions = missions.filter(m => (m.id || 0) > lastFetchedMissionId);
+                            if (newMissions.length > 0) {
+                                lastFetchedMissionId = Math.max(...newMissions.map(m => m.id || 0));
+                                for (const m of newMissions) {
+                                    try {
+                                        const detailRes = await fetch(`http://${host}/api/v2.0.0/mission_queue/${m.id}`, { headers });
+                                        if (detailRes.ok) {
+                                            const detail = await detailRes.json();
+                                            const state = detail.state || 'Unknown';
+                                            let missionName = mirCtrl.getMissionName ? mirCtrl.getMissionName(detail.mission_id) : null;
+                                            if (!missionName) missionName = (detail.mission_id || 'Unknown').substring(0, 8);
+                                            const source = missionName;
+                                            const message = (detail.message || 'No message').substring(0, 40);
+                                            const timeStr = detail.finished || detail.started || new Date().toLocaleTimeString('ko-KR', { hour12: false });
+                                            appendLogRow('mirLogTbody', `MISSION ${state}`, source, message, timeStr);
+                                        }
+                                    } catch (e) { }
+                                }
                             }
                         }
                     }
-                    syncMissionQueueUI(activeQueue);
+                    syncMissionQueueUI(activeQueue); // Now safely clears blur when activeQueue is empty
                 }
             }
         } catch (e) { }
@@ -749,7 +752,9 @@ function syncMissionQueueUI(activeQueue) {
         const chk = row.querySelector('input[type="checkbox"]');
         if (!chk) return;
         const guid = chk.value;
-        if (activeMissionGuids.has(guid)) {
+
+        // CRITICAL CHECK: Look at BOTH the real queue and the optimistic local lock
+        if (activeMissionGuids.has(guid) || (typeof optimisticMissions !== 'undefined' && optimisticMissions.has(guid))) {
             row.classList.add('in-queue-mission');
             chk.disabled = true;
             chk.checked = false;
@@ -956,6 +961,16 @@ window.cmdMirClearErr = async () => {
 
 window.cmdAddMissionToQueue = async () => {
     if (checkedSetupMissions.length === 0) return alert('추가할 미션을 체크해주세요.');
+
+    // [CRITICAL FIX] 1. INSTANT UI FEEDBACK (Optimistic)
+    const box = document.getElementById('mirMissionListSetup');
+    if (box) {
+        box.querySelectorAll('input[type="checkbox"]:checked').forEach(c => {
+            c.disabled = true;
+            c.parentElement.classList.add('in-queue-mission');
+        });
+    }
+
     try {
         const host = getMirHost();
         const headers = getMirHeaders();
@@ -967,18 +982,30 @@ window.cmdAddMissionToQueue = async () => {
                 await new Promise(r => setTimeout(r, 800));
             }
         }
+
         let successCount = 0;
+        let failCount = 0;
         for (const guid of checkedSetupMissions) {
+            optimisticMissions.add(guid); // Protect state
             const res = await fetch(`http://${host}/api/v2.0.0/mission_queue`, { method: 'POST', headers, body: JSON.stringify({ mission_id: guid }) });
             if (res.ok) successCount++;
+            else failCount++;
         }
-        if (successCount > 0) {
-            logMirSystemData(`미션 ${successCount}개가 큐에 추가되었습니다.`, 'ok');
-            const box = document.getElementById('mirMissionListSetup');
-            if (box) box.querySelectorAll('input[type="checkbox"]').forEach(c => c.checked = false);
-            checkedSetupMissions = [];
-        }
-    } catch (e) { }
+
+        if (successCount > 0) logMirSystemData(`미션 ${successCount}개가 큐에 추가되었습니다.`, 'ok');
+        if (failCount > 0) logMirSystemData(`미션 ${failCount}개 추가 실패 (로봇 상태 확인)`, 'err');
+
+        checkedSetupMissions = [];
+
+        // Let actual polling take over after 3 seconds
+        setTimeout(() => { optimisticMissions.clear(); window.pollDetailedLogs(); }, 3000);
+        window.pollDetailedLogs();
+
+    } catch (e) {
+        logMirSystemData(`미션 추가 중 오류: ${e.message}`, "err");
+        optimisticMissions.clear();
+        window.pollDetailedLogs(); // Revert UI if completely failed
+    }
 };
 
 window.cmdClearMissionQueue = async () => {
