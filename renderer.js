@@ -135,12 +135,10 @@ function logMirSystemData(msg, type = "info") {
 }
 
 function appendLogRow(tbodyId, state, module, msg, timestamp) {
-    const s = state.toUpperCase();
+    const s = (state || '').toUpperCase();
 
-    // Notifications for Critical Errors (Toast removed per requirement)
-    if (s.includes("ERROR") || s.includes("FATAL") || s.includes("FAIL")) {
-        addNotification(`[ERROR] ${module}: ${msg}`, 'err');
-    }
+    // [CRITICAL FIX] Removed addNotification from here to prevent raw ROS logs from flooding the UI.
+    // Notifications are now ONLY triggered by actual Active Errors in pollDetailedLogs.
 
     if (tbodyId === 'mirLogTbody') {
         // Allow tracking of general status updates and events alongside errors
@@ -166,6 +164,12 @@ function appendLogRow(tbodyId, state, module, msg, timestamp) {
     `;
     tbody.prepend(tr);
     while (tbody.children.length > 100) tbody.removeChild(tbody.lastChild);
+
+    // [CRITICAL FIX] Auto-scroll to top so the newest log is always visible
+    const scrollContainer = tbody.closest('.log-scroll-area') || tbody.closest('div');
+    if (scrollContainer) {
+        scrollContainer.scrollTop = 0;
+    }
 }
 
 // -----------------------------------------------
@@ -455,33 +459,7 @@ window.toggleLidar = (which, visible) => {
 // -----------------------------------------------
 // MiR Diagnostics
 // -----------------------------------------------
-async function fetchDiagnosticsAPI() {
-    try {
-        const host = getMirHost();
-        const headers = getMirHeaders();
-        const res = await fetch(`http://${host}/api/v2.0.0/experimental/diagnostics`, { headers });
-        if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data)) {
-                data.forEach(diag => {
-                    if (diag.level && diag.level > 0) {
-                        const levelStr = diag.level === 1 ? "WARN" : "ERROR";
-                        const module = diag.name || diag.module || 'Diagnostics';
-                        const msg = diag.message || diag.msg || JSON.stringify(diag);
-                        const hash = `${module}:${msg}`;
-                        if (!activeDiagnostics.has(hash)) {
-                            const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                            appendLogRow('mirLogTbody', levelStr, module, msg, ts);
-                            logMirSystemData(`[Event] ${module}: ${msg}`, levelStr === "ERROR" ? "err" : "warn");
-                            activeDiagnostics.add(hash);
-                            setTimeout(() => { activeDiagnostics.delete(hash); }, 30000);
-                        }
-                    }
-                });
-            }
-        }
-    } catch (e) { }
-}
+
 
 // -----------------------------------------------
 // Map Rendering
@@ -599,61 +577,29 @@ window.pollDetailedLogs = () => {
                 }
 
                 if (stat.state_text !== lastMirState || stat.mission_text !== lastMissionText) {
-                    const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                    const missionTxt = stat.mission_text ? stat.mission_text.substring(0, 40) : 'Idle';
-                    appendLogRow('mirLogTbody', 'STATE', 'System', `[${stat.state_text}] ${missionTxt}`, ts);
-                    if (stat.state_text !== lastMirState) {
-                        logMirSystemData(`상태 변경: ${stat.state_text}`, 'info');
-                    }
                     lastMirState = stat.state_text;
                     lastMissionText = stat.mission_text;
+                    logMirSystemData(`상태 변경: ${stat.state_text} (${stat.mission_text || 'Idle'})`, 'info');
                 }
 
+                // [CRITICAL FIX] Active Errors from /status are pushed to Notifications and Mini-Logs
                 const activeErrors = stat.errors || [];
-                if (activeErrors.length !== lastActiveErrorsCount && activeErrors.length > 0) {
-                    const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                    activeErrors.forEach(err => {
-                        appendLogRow('mirLogTbody', 'ERROR', err.module || 'Unknown', err.description || 'No description', ts);
-                    });
-                    lastActiveErrorsCount = activeErrors.length;
-                } else if (activeErrors.length === 0) {
-                    lastActiveErrorsCount = 0;
-                }
-            }
-        } catch (e) { }
-    })();
-
-    // 2. Error Reports Polling (Independent)
-    (async () => {
-        try {
-            const sumRes = await fetch(`http://${host}/api/v2.0.0/log/error_reports`, { headers });
-            if (sumRes.ok) {
-                const logs = await sumRes.json();
-                if (Array.isArray(logs)) {
-                    if (logs.length === 0) {
-                        lastFetchedErrorId = 0; // Safe fallback for empty array
-                    } else if (lastFetchedErrorId === -1) {
-                        lastFetchedErrorId = Math.max(...logs.map(l => l.id || 0));
-                    } else {
-                        const newLogs = logs.filter(log => (log.id || 0) > lastFetchedErrorId);
-                        if (newLogs.length > 0) {
-                            lastFetchedErrorId = Math.max(...newLogs.map(l => l.id || 0));
-                            for (const log of newLogs) {
-                                try {
-                                    const detailRes = await fetch(`http://${host}/api/v2.0.0/log/error_reports/${log.id}`, { headers });
-                                    if (detailRes.ok) {
-                                        const detail = await detailRes.json();
-                                        const module = detail.module || 'System';
-                                        const message = detail.description || '상세 없음';
-                                        const timeStr = detail.time ? new Date(detail.time).toLocaleTimeString('ko-KR', { hour12: false }) : new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                                        appendLogRow('mirLogTbody', 'ERROR', module, message, timeStr);
-                                        logMirSystemData(`[새 에러] ${module}: ${message}`, "err");
-                                    }
-                                } catch (e) { }
-                            }
-                        }
+                activeErrors.forEach(err => {
+                    const code = err.code || 0;
+                    if (!activeErrorCodes.has(code)) {
+                        activeErrorCodes.add(code);
+                        const msg = `[에러 ${code}] ${err.module}: ${err.description}`;
+                        logMirSystemData(msg, 'err');
+                        // [BUG FIX] Corrected signature from ('MiR Error', msg, 'error') to (msg, 'err')
+                        addNotification(msg, 'err');
                     }
-                }
+                });
+
+                // Clear old errors
+                const currentErrorCodes = new Set(activeErrors.map(e => e.code));
+                activeErrorCodes.forEach(code => {
+                    if (!currentErrorCodes.has(code)) activeErrorCodes.delete(code);
+                });
             }
         } catch (e) { }
     })();
@@ -734,46 +680,6 @@ window.pollDetailedLogs = () => {
                     // Sync UI using the detailed array containing the mission_ids
                     if (typeof window.syncMissionQueueUI === 'function') {
                         window.syncMissionQueueUI(detailedActiveQueue);
-                    }
-                }
-            }
-        } catch (e) { }
-    })();
-
-    // 4. System Logs Polling (Independent)
-    (async () => {
-        try {
-            const sysLogRes = await fetch(`http://${host}/api/v2.0.0/log/sys_log`, { headers });
-            if (sysLogRes.ok) {
-                const logs = await sysLogRes.json();
-                if (Array.isArray(logs) && logs.length > 0) {
-                    if (lastFetchedSysLogId === -1) {
-                        lastFetchedSysLogId = Math.max(...logs.map(l => l.id || 0));
-                        // Render initial logs
-                        const initialLogs = logs.slice(-15);
-                        for (const log of initialLogs) {
-                            let level = "INFO";
-                            if (log.description && (log.description.includes("Error") || log.description.includes("Fail"))) level = "ERROR";
-                            else if (log.description && (log.description.includes("Warning") || log.description.includes("Warn"))) level = "WARN";
-                            const module = log.module || "System";
-                            const timeStr = log.time ? new Date(log.time).toLocaleTimeString('ko-KR', { hour12: false }) : new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                            appendLogRow('mirLogTbody', level, module, log.description, timeStr);
-                        }
-                    } else {
-                        const newLogs = logs.filter(log => (log.id || 0) > lastFetchedSysLogId);
-                        if (newLogs.length > 0) {
-                            lastFetchedSysLogId = Math.max(...newLogs.map(l => l.id || 0));
-                            for (const log of newLogs) {
-                                let level = "INFO";
-                                if (log.description && (log.description.includes("Error") || log.description.includes("Fail"))) level = "ERROR";
-                                else if (log.description && (log.description.includes("Warning") || log.description.includes("Warn"))) level = "WARN";
-                                const module = log.module || "System";
-                                const message = log.description || "Log entry";
-                                const timeStr = log.time ? new Date(log.time).toLocaleTimeString('ko-KR', { hour12: false }) : new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                                appendLogRow('mirLogTbody', level, module, message, timeStr);
-                                logMirSystemData(message, level === "ERROR" ? "err" : level === "WARN" ? "warn" : "info");
-                            }
-                        }
                     }
                 }
             }
@@ -1364,6 +1270,54 @@ function wireMapCheckboxes() {
     };
     interaction('mapCanvas'); interaction('setupMapCanvas');
 }
+function connectMirWebSocket() {
+    const host = getMirHost();
+    const ws = new WebSocket(`ws://${host}:9090`);
+
+    ws.onopen = () => {
+        console.log(`[MiR WebSocket] Connected to ${host}:9090`);
+        ws.send(JSON.stringify({
+            "op": "subscribe",
+            "topic": "/rosout",
+            "type": "rosgraph_msgs/Log"
+        }));
+    };
+
+    ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            // [CRITICAL FIX] Removed strict op/topic checks. Mimicking Python's "if 'msg' in data:"
+            if (data.msg && data.msg.level !== undefined) {
+                const log = data.msg;
+                
+                // ROS levels: 1:DEBUG, 2:INFO, 4:WARN, 8:ERROR, 16:FATAL
+                let level = "INFO";
+                if (log.level === 4) level = "WARN";
+                else if (log.level >= 8) level = "ERROR";
+                else if (log.level === 1) return; // Skip noisy DEBUG logs
+
+                const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+                
+                // Ensure appendLogRow exists and works
+                if (typeof appendLogRow === 'function') {
+                    appendLogRow('mirLogTbody', level, log.name || 'System', log.msg || '', ts);
+                }
+            }
+        } catch (e) {
+            console.error("[MiR WebSocket] Error parsing message:", e);
+        }
+    };
+
+    ws.onclose = () => {
+        console.warn("[MiR WebSocket] Disconnected. Retrying in 5s...");
+        setTimeout(connectMirWebSocket, 5000);
+    };
+
+    ws.onerror = (err) => {
+        console.error("[MiR WebSocket] Error:", err);
+    };
+}
+
 
 window.onload = () => {
     mirCtrl.init(mapCanvas, null, (state, extra) => {
@@ -1426,8 +1380,8 @@ window.onload = () => {
     setInterval(pollTopicHeartbeats, 2000);
     setTimeout(() => { window.fetchAndRenderUserMissions(); }, 1500);
     setInterval(() => { window.pollDetailedLogs(); }, 1000);
-    setInterval(() => { fetchDiagnosticsAPI(); }, 3000);
     setInterval(() => { fetchProtectiveScanAPI(); }, 200);
+    connectMirWebSocket();
     renderScenarioButtons();
     initROS3DViewer();
     updateMapScaleBar();

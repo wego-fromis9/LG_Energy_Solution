@@ -1,35 +1,55 @@
-import requests
-import hashlib
-import base64
+import websocket
+import json
 import time
 
-# 로봇 IP 설정
-ROBOT_IP = "192.168.12.20"
-USERNAME = "distributor"
-PASSWORD = "distributor"
+# MiR 로봇의 웹소켓 포트는 기본적으로 9090을 사용합니다.
+MIR_IP = "192.168.12.20"
+WS_URL = f"ws://{MIR_IP}:9090"
 
-pw_hash = hashlib.sha256(PASSWORD.encode('utf-8')).hexdigest()
-auth_b64 = base64.b64encode(f"{USERNAME}:{pw_hash}".encode('utf-8')).decode('utf-8')
+def on_message(ws, message):
+    # 로봇이 실시간으로 뿜어내는 데이터를 받아서 파싱합니다.
+    data = json.loads(message)
+    if 'msg' in data:
+        log_msg = data['msg']
+        
+        # ROS 로그 레벨 구분 (1:DEBUG, 2:INFO, 4:WARN, 8:ERROR, 16:FATAL)
+        level_num = log_msg.get('level', 2)
+        level_str = "INFO"
+        if level_num == 4: level_str = "WARN"
+        elif level_num >= 8: level_str = "ERROR"
 
-HEADERS = {"Authorization": f"Basic {auth_b64}"}
+        # 로그 출력
+        print(f"[{level_str}] 모듈: {log_msg.get('name', 'N/A')} | 메시지: {log_msg.get('msg', 'N/A')}")
 
-print(f"[{time.strftime('%H:%M:%S')}] 라이다 맵 이미지(0~19) 다운로드 시작...")
+def on_error(ws, error):
+    print(f"❌ 웹소켓 에러: {error}")
 
-for i in range(20):
-    # 캐시를 무시하기 위한 타임스탬프
-    timestamp = int(time.time() * 1000)
-    url = f"http://{ROBOT_IP}/robot-images/laser_map/laser_map_{i}.png?t={timestamp}"
+def on_close(ws, close_status_code, close_msg):
+    print("🔌 웹소켓 연결이 종료되었습니다.")
+
+def on_open(ws):
+    print(f"✅ MiR 로봇({MIR_IP}:9090) ROSbridge 연결 성공!")
+    print("📡 실시간 시스템 로그(/rosout) 구독을 시작합니다...\n" + "="*50)
     
-    try:
-        response = requests.get(url, headers=HEADERS, timeout=3)
-        if response.status_code == 200:
-            filename = f"laser_map_{i}.png"
-            with open(filename, "wb") as f:
-                f.write(response.content)
-            print(f"✅ {filename} 다운로드 성공!")
-        else:
-            print(f"❌ {i}번 이미지 실패 (상태 코드: {response.status_code})")
-    except Exception as e:
-        print(f"⚠️ {i}번 이미지 통신 에러: {e}")
+    # 로봇의 전체 시스템 로그(/rosout) 토픽을 구독(Subscribe)하겠다는 명령을 보냅니다.
+    subscribe_msg = {
+        "op": "subscribe",
+        "topic": "/rosout",
+        "type": "rosgraph_msgs/Log"
+    }
+    ws.send(json.dumps(subscribe_msg))
 
-print("다운로드 완료! 폴더를 확인해 보세요.")
+if __name__ == "__main__":
+    print(f"[{time.strftime('%H:%M:%S')}] 로봇 내부 신경망 접속 시도 중...")
+    
+    # 웹소켓 앱 실행
+    wsapp = websocket.WebSocketApp(
+        WS_URL,
+        on_open=on_open,
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close
+    )
+    
+    # 무한 루프하며 로그 수신
+    wsapp.run_forever()
