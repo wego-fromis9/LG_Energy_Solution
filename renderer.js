@@ -35,13 +35,14 @@ let isUrManualMode = false;
 let isUrEstop = false;
 let isUrUnlock = false;
 let isUrInitial = false;
+let lidarTileIndex = 0;
 
 
 
 // Notification System State
 let notifications = [];
 let unreadCount = 0;
-let urdfReqId; 
+let urdfReqId;
 
 // -----------------------------------------------
 // Authentication & Host
@@ -135,7 +136,7 @@ function logMirSystemData(msg, type = "info") {
 
 function appendLogRow(tbodyId, state, module, msg, timestamp) {
     const s = state.toUpperCase();
-    
+
     // Notifications for Critical Errors (Toast removed per requirement)
     if (s.includes("ERROR") || s.includes("FATAL") || s.includes("FAIL")) {
         addNotification(`[ERROR] ${module}: ${msg}`, 'err');
@@ -323,13 +324,24 @@ customArrowImg.src = 'images/nav_arrow.png';
 async function fetchProtectiveScanAPI() {
     if (!currentMapId || !mapImgObj) return;
 
+    // Only fetch if the checkbox in the active tab is actually checked (save bandwidth)
+    const isSetup = document.getElementById('tabSetup').classList.contains('active');
+    const chkLidar = document.getElementById(isSetup ? 'chkLidarSetup' : 'chkLidar');
+    if (!chkLidar || !chkLidar.checked) {
+        if (typeof drawProtectiveScanOverlay === 'function') drawProtectiveScanOverlay(null);
+        return;
+    }
+
     try {
         const host = getMirHost();
         const headers = getMirHeaders();
-        const url = `http://${host}/api/v2.0.0/system/protective_scan`;
+
+        // Use the round-robin buffer (0-19) discovered by the user with cache-busting
+        const url = `http://${host}/robot-images/laser_map/laser_map_${lidarTileIndex}.png?t=${Date.now()}`;
 
         const res = await fetch(url, {
-            headers: { ...headers, 'Accept': 'image/png' }
+            headers: { ...headers, 'Accept': 'image/png' },
+            cache: 'no-store'
         });
 
         if (res.ok) {
@@ -337,18 +349,21 @@ async function fetchProtectiveScanAPI() {
             const imgUrl = URL.createObjectURL(blob);
             const img = new Image();
             img.onload = () => {
-                drawProtectiveScanOverlay(img);
+                if (typeof drawProtectiveScanOverlay === 'function') drawProtectiveScanOverlay(img);
                 URL.revokeObjectURL(imgUrl);
             };
             img.onerror = () => {
-                drawProtectiveScanOverlay(null);
+                if (typeof drawProtectiveScanOverlay === 'function') drawProtectiveScanOverlay(null);
             };
             img.src = imgUrl;
+
+            // Increment and wrap around the 0-19 buffer for the next poll
+            lidarTileIndex = (lidarTileIndex + 1) % 20;
         } else {
-            drawProtectiveScanOverlay(null);
+            if (typeof drawProtectiveScanOverlay === 'function') drawProtectiveScanOverlay(null);
         }
     } catch (e) {
-        drawProtectiveScanOverlay(null);
+        if (typeof drawProtectiveScanOverlay === 'function') drawProtectiveScanOverlay(null);
     }
 }
 
@@ -404,24 +419,30 @@ function drawProtectiveScanOverlay(img) {
             ctx.translate(rx, ry);
             ctx.rotate(-rad);
 
-            // Draw LiDAR Scan ONLY if checkbox is checked
+            // Draw the fetched LiDAR image ONLY (Independent Rotation)
             if (img && chkLidar && chkLidar.checked) {
+                ctx.save(); // Isolate LiDAR rotation
+                ctx.rotate(Math.PI / 4); // Rotate LiDAR 90 degrees CCW
+
                 const scanRes = 0.05;
                 const scale = scanRes / r;
                 ctx.drawImage(img, (-img.width / 2) * scale, (-img.height / 2) * scale, img.width * scale, img.height * scale);
+
+                ctx.restore(); // Restore context so the robot arrow remains unaffected
             }
 
-            // Draw Robot Arrow
+            // Draw Robot Arrow (Remains completely untouched)
             if (customArrowImg.complete && customArrowImg.naturalHeight !== 0) {
                 const iconSize = 40;
-                ctx.save(); ctx.rotate(Math.PI / 2);
+                ctx.save();
+                ctx.rotate(Math.PI / 2);
                 ctx.drawImage(customArrowImg, -iconSize / 2, -iconSize / 2, iconSize, iconSize);
                 ctx.restore();
             } else {
                 ctx.fillStyle = '#4285F4';
                 ctx.beginPath(); ctx.arc(0, 0, 12, 0, 2 * Math.PI); ctx.fill();
             }
-            ctx.restore();
+            ctx.restore(); // Final restore for the main robot translation/rotation
         }
     });
 }
@@ -528,11 +549,11 @@ function updateMapScaleBar() {
     const res = globalMapMeta.r || 0.05;
     // We want a bar representing 1 meter
     const pixelsPerMeter = 1.0 / res;
-    
+
     // Choose a reasonable length (e.g., if 1m is too short, show 2m)
     let displayMeters = 1;
     let barWidth = pixelsPerMeter;
-    
+
     if (barWidth < 40) {
         displayMeters = 2;
         barWidth = pixelsPerMeter * 2;
@@ -545,7 +566,7 @@ function updateMapScaleBar() {
         const el = document.getElementById(id);
         if (el) el.style.width = `${barWidth}px`;
     });
-    
+
     ['scaleLabelMain', 'scaleLabelSetup'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerText = `${displayMeters}m`;
@@ -712,7 +733,7 @@ window.pollDetailedLogs = () => {
 
                     // Sync UI using the detailed array containing the mission_ids
                     if (typeof window.syncMissionQueueUI === 'function') {
-                        window.syncMissionQueueUI(detailedActiveQueue); 
+                        window.syncMissionQueueUI(detailedActiveQueue);
                     }
                 }
             }
@@ -761,7 +782,7 @@ window.pollDetailedLogs = () => {
     updateWaypointHighlighting();
 };
 
-window.syncMissionQueueUI = function(activeQueue) {
+window.syncMissionQueueUI = function (activeQueue) {
     const box = document.getElementById('mirMissionListSetup');
     if (!box) return;
 
@@ -1124,7 +1145,7 @@ function initROS3DViewer() {
     urCtrl.startJointSubscriber((msg) => {
         if (!msg) return;
         const newJoints = {};
-        
+
         if (msg.name && msg.position) {
             // Format A: Raw ROS 2 Message Arrays
             for (let i = 0; i < msg.name.length; i++) {
@@ -1136,7 +1157,7 @@ function initROS3DViewer() {
                 newJoints[key] = msg[key];
             }
         }
-        
+
         if (Object.keys(newJoints).length > 0) {
             globalTargetJoints = newJoints;
         }
@@ -1151,10 +1172,10 @@ function initROS3DViewer() {
     const jointCalibration = {
         'shoulder_pan_joint': { multiplier: 1, offset: 0 },
         'shoulder_lift_joint': { multiplier: 1, offset: 0 },
-        'elbow_joint':         { multiplier: 1, offset: 0 },
-        'wrist_1_joint':       { multiplier: 1, offset: 0 },
-        'wrist_2_joint':       { multiplier: 1, offset: 0 },
-        'wrist_3_joint':       { multiplier: 1, offset: 0 }
+        'elbow_joint': { multiplier: 1, offset: 0 },
+        'wrist_1_joint': { multiplier: 1, offset: 0 },
+        'wrist_2_joint': { multiplier: 1, offset: 0 },
+        'wrist_3_joint': { multiplier: 1, offset: 0 }
     };
 
     // 3. Initialize Shared THREE.js Scene
@@ -1194,13 +1215,13 @@ function initROS3DViewer() {
     // 4. Load URDF (Once)
     const loader = new URDFLoader(new THREE.LoadingManager());
     loader.packages = { 'ur_description': `file://${__dirname}/src/Universal_Robots_ROS2_Description` };
-    
+
     loader.load(`file://${__dirname}/src/ur5e.urdf`, robot => {
         rosWrapper.add(robot);
         window.shared3DViewer.robot = robot;
         robot.rotation.z = modelBaseConfig.heading;
         logUr(`[WebGL] Shared URDF model loaded.`);
-        
+
         // Diagnostic: Log URDF joints to console
         console.log("--- URDF Model Joints ---", Object.keys(robot.joints));
     });
@@ -1211,7 +1232,7 @@ function initROS3DViewer() {
     const renderLoop = function () {
         urdfReqId = requestAnimationFrame(renderLoop);
         const robot = window.shared3DViewer.robot;
-        
+
         if (robot && Object.keys(globalTargetJoints).length > 0) {
             // One-time Diagnostic: Check name mismatch
             if (!hasLoggedMismatch) {
@@ -1224,11 +1245,11 @@ function initROS3DViewer() {
                 if (typeof targetPosition === 'number' && !isNaN(targetPosition)) {
                     const cal = jointCalibration[jName] || { multiplier: 1, offset: 0 };
                     const finalAngle = (targetPosition * cal.multiplier) + cal.offset;
-                    
+
                     // Priority 1: Official setJointValue API
                     if (typeof robot.setJointValue === 'function') {
                         robot.setJointValue(jName, finalAngle);
-                    } 
+                    }
                     // Priority 2: Direct joint access
                     else if (robot.joints && robot.joints[jName]) {
                         robot.joints[jName].jointValue = finalAngle;
@@ -1236,7 +1257,7 @@ function initROS3DViewer() {
                 }
             }
         }
-        
+
         controls.update();
 
         // [AUTO-RESIZE] Check for parent container visibility and reported size
@@ -1244,7 +1265,7 @@ function initROS3DViewer() {
         if (container && container.clientWidth > 0 && container.clientHeight > 0) {
             const width = container.clientWidth;
             const height = container.clientHeight;
-            
+
             // Trigger three.js resize only if size actually mismatch
             if (renderer.domElement.width !== width || renderer.domElement.height !== height) {
                 renderer.setSize(width, height, false);
@@ -1259,16 +1280,16 @@ function initROS3DViewer() {
 
 window.cmdRefresh3DViewer = () => {
     if (urdfReqId) cancelAnimationFrame(urdfReqId);
-    
+
     if (window.shared3DViewer && window.shared3DViewer.renderer) {
         window.shared3DViewer.renderer.dispose();
     }
-    
+
     const c1 = document.getElementById('urdf-viewer');
     const c2 = document.getElementById('urdf-viewer-setup');
     if (c1) c1.innerHTML = '';
     if (c2) c2.innerHTML = '';
-    
+
     initROS3DViewer();
     logUr("[INFO] 3D Viewer refreshed.");
     addNotification("Success: 3D Viewer context re-initialized", "ok");
@@ -1286,7 +1307,7 @@ function startUrEstopMonitor() {
         const match = d.toString().match(/data:\s*(true|false)/i);
         if (match) {
             const isEstopFromTopic = match[1].toLowerCase() === 'true';
-            
+
             // [FIX] If the user has manually engaged the E-Stop (isUrEstop is true),
             // ignore the background node's "false" spam.
             if (isUrEstop && !isEstopFromTopic) return;
@@ -1406,7 +1427,7 @@ window.onload = () => {
     setTimeout(() => { window.fetchAndRenderUserMissions(); }, 1500);
     setInterval(() => { window.pollDetailedLogs(); }, 1000);
     setInterval(() => { fetchDiagnosticsAPI(); }, 3000);
-    setInterval(() => { fetchProtectiveScanAPI(); }, 500);
+    setInterval(() => { fetchProtectiveScanAPI(); }, 200);
     renderScenarioButtons();
     initROS3DViewer();
     updateMapScaleBar();

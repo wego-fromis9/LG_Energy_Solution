@@ -159,7 +159,7 @@
             background: #ffffff;
             border: 1px solid #ddd;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             display: none;
             flex-direction: column;
             z-index: 2000;
@@ -191,8 +191,15 @@
             border-bottom: none;
         }
 
-        .notification-item.err { color: #d32f2f; background: #fffcfc; }
-        .notification-item.ok { color: #2e7d32; background: #fcfdfc; }
+        .notification-item.err {
+            color: #d32f2f;
+            background: #fffcfc;
+        }
+
+        .notification-item.ok {
+            color: #2e7d32;
+            background: #fcfdfc;
+        }
 
         .clear-btn {
             background: transparent;
@@ -203,7 +210,9 @@
             cursor: pointer;
         }
 
-        .clear-btn:hover { background: #f5f5f5; }
+        .clear-btn:hover {
+            background: #f5f5f5;
+        }
 
         /* ===== Toast Notifications ===== */
         .toast-container {
@@ -225,7 +234,7 @@
             border-left: 5px solid #00a5e5;
             padding: 12px 20px;
             border-radius: 6px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
             font-size: 13px;
             font-weight: 600;
             display: flex;
@@ -234,12 +243,26 @@
             pointer-events: all;
         }
 
-        .toast.error { border-left-color: #ff4d4d; color: #d32f2f; }
-        .toast.msg { border-left-color: #00a5e5; color: #333; }
+        .toast.error {
+            border-left-color: #ff4d4d;
+            color: #d32f2f;
+        }
+
+        .toast.msg {
+            border-left-color: #00a5e5;
+            color: #333;
+        }
 
         @keyframes toast-in {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
         }
 
         /* ===== Map Scale Bar ===== */
@@ -247,7 +270,7 @@
             position: absolute;
             bottom: 35px;
             right: 15px;
-            background: rgba(255,255,255,0.7);
+            background: rgba(255, 255, 255, 0.7);
             padding: 4px 8px;
             border-radius: 4px;
             pointer-events: none;
@@ -255,7 +278,7 @@
             flex-direction: column;
             align-items: center;
             z-index: 15;
-            border: 1px solid rgba(0,0,0,0.1);
+            border: 1px solid rgba(0, 0, 0, 0.1);
         }
 
         .scale-bar-line {
@@ -825,7 +848,8 @@
                     <button class="clear-btn" onclick="clearNotifications()">Clear</button>
                 </div>
                 <div id="notificationList" class="dropdown-list">
-                    <div style="padding:15px; color:#aaa; font-size:11px; text-align:center;">No recent notifications.</div>
+                    <div style="padding:15px; color:#aaa; font-size:11px; text-align:center;">No recent notifications.
+                    </div>
                 </div>
             </div>
         </div>
@@ -889,8 +913,10 @@
                         <!-- LiDAR Overlay Canvas -->
                         <canvas id="lidarCanvasSetup" class="lidar-canvas" style="display:block;"></canvas>
                         <div class="overlay-layers">
-                            <label><input type="checkbox" id="chkWaypointSetup" checked> <img src="images/position_icon.png" style="height:20px;"> Waypoint</label>
-                            <label><input type="checkbox" id="chkChargeSetup" checked> <img src="images/battery_charge_icon.png" style="height:20px;"> Charge</label>
+                            <label><input type="checkbox" id="chkWaypointSetup" checked> <img
+                                    src="images/position_icon.png" style="height:20px;"> Waypoint</label>
+                            <label><input type="checkbox" id="chkChargeSetup" checked> <img
+                                    src="images/battery_charge_icon.png" style="height:20px;"> Charge</label>
                             <label><input type="checkbox" id="chkLidarSetup" checked
                                     onchange="toggleLidar('setup', this.checked)"><img src="images/lidar_icon.png"
                                     style="height:20px;"> LiDAR</label>
@@ -1085,7 +1111,7 @@
                         <canvas id="lidarCanvas" class="lidar-canvas" style="display:block;"></canvas>
                         <div class="overlay-layers">
                             <label><input type="checkbox" id="chkWaypoint" checked> <img src="images/position_icon.png"
-                                     style="height:20px;"> Waypoint</label>
+                                    style="height:20px;"> Waypoint</label>
                             <label><input type="checkbox" id="chkCharge" checked> <img
                                     src="images/battery_charge_icon.png" style="height:20px;"> Charge</label>
                             <label><input type="checkbox" id="chkLidar" checked

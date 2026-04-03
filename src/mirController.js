@@ -207,7 +207,7 @@ class MiRController {
                 try {
                     const dRes = await fetch(`${this.getBaseUrl()}/positions/${p.guid}`, { headers: this.getAuthHeader() });
                     if (dRes.ok) detailedPositions.push(await dRes.json());
-                } catch(err) { /* ignore single drop */ }
+                } catch (err) { /* ignore single drop */ }
             }
 
             this.map.positions = detailedPositions;
@@ -234,20 +234,20 @@ class MiRController {
             this.setupCanvas.height = this.map.baseImage.height;
             this.setupCtx.clearRect(0, 0, this.setupCanvas.width, this.setupCanvas.height);
             this.setupCtx.drawImage(this.map.baseImage, 0, 0);
-        }        const h = this.map.baseImage.height;
+        } const h = this.map.baseImage.height;
         const w = this.map.baseImage.width;
         const r = this.map.resolution > 0 ? this.map.resolution : 0.05;
         const ox = this.map.originX, oy = this.map.originY;
 
         // --- Metric Grid Layer ---
         if (this.showGrid) {
-            const gridSpacingPx = 1.0 / r; 
+            const gridSpacingPx = 1.0 / r;
             [this.ctx, this.setupCtx].forEach(ctx => {
                 if (!ctx) return;
                 ctx.beginPath();
-                ctx.strokeStyle = "rgba(0, 255, 0, 0.8)"; 
+                ctx.strokeStyle = "rgba(0, 255, 0, 0.8)";
                 ctx.lineWidth = 1.0;
-                
+
                 const startX = (((-ox / r) % gridSpacingPx) + gridSpacingPx) % gridSpacingPx;
                 for (let x = startX; x <= w; x += gridSpacingPx) {
                     ctx.moveTo(x, 0); ctx.lineTo(x, h);
@@ -269,11 +269,11 @@ class MiRController {
             if (p.pos_x == null || p.pos_y == null) return;
             const px = (p.pos_x - ox) / r;
             const py = h - ((p.pos_y - oy) / r);
-            
+
             if (p.type_id === 7 && this.showChargers) {
                 const sz = 16;
-                if (this.ctx) this.ctx.drawImage(this.imgCharger, px - sz/2, py - sz/2, sz, sz);
-                if (this.setupCtx) this.setupCtx.drawImage(this.imgCharger, px - sz/2, py - sz/2, sz, sz);
+                if (this.ctx) this.ctx.drawImage(this.imgCharger, px - sz / 2, py - sz / 2, sz, sz);
+                if (this.setupCtx) this.setupCtx.drawImage(this.imgCharger, px - sz / 2, py - sz / 2, sz, sz);
             } else if ((p.type_id === 0 || p.type_id === 11) && this.showWaypoints) {
                 const sz = 16;
                 const theta = p.orientation != null ? p.orientation : 0;
@@ -281,21 +281,25 @@ class MiRController {
                     if (c) {
                         c.save();
                         c.translate(px, py);
-                        c.rotate(-theta * (Math.PI / 180));
-                        c.drawImage(this.imgWaypoint, -sz/2, -sz/2, sz, sz);
+                        // [CRITICAL FIX] Added -(Math.PI / 2) to rotate ONLY the waypoint icon 90 degrees CCW
+                        c.rotate(-theta * (Math.PI / 180) + (Math.PI / 2));
+
+                        if (this.imgWaypoint && this.imgWaypoint.complete && this.imgWaypoint.naturalHeight !== 0) {
+                            c.drawImage(this.imgWaypoint, -sz / 2, -sz / 2, sz, sz);
+                        }
                         c.restore();
                     }
                 });
             }
         });
-        
+
         // Resolution Text (Overlay)
         this.ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
         this.ctx.font = "bold 11px Roboto Mono, monospace";
         this.ctx.textAlign = "right";
         this.ctx.shadowColor = "black";
         this.ctx.shadowBlur = 4;
-        this.ctx.fillText(`Scale: 1.0m/grid | Res: ${r.toFixed(3)} m/px`, w - 10, h - 10);
+        // this.ctx.fillText(`Scale: 1.0m/grid | Res: ${r.toFixed(3)} m/px`, w - 10, h - 10);
         this.ctx.shadowBlur = 0;
     }
 
@@ -348,14 +352,14 @@ class MiRController {
                         newMissions.push({
                             id: d.id,
                             state: d.state || 'Unknown',
-                            mission_id: d.mission_id ? String(d.mission_id).substring(0,20) : 'Unknown',
+                            mission_id: d.mission_id ? String(d.mission_id).substring(0, 20) : 'Unknown',
                             message: d.message || 'No message',
                             time: d.finished || d.started || new Date().toISOString()
                         });
                     }
                 }
             }
-        } catch(e) { 
+        } catch (e) {
             console.error(`[MiR API] Log Poll Error: ${e.message}`);
         }
         return { newErrors, newMissions };
