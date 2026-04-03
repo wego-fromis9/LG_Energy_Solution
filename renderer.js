@@ -36,8 +36,7 @@ let isUrEstop = false;
 let isUrUnlock = false;
 let isUrInitial = false;
 
-// Mission optimistic UI state
-let optimisticMissions = new Set();
+
 
 // Notification System State
 let notifications = [];
@@ -644,11 +643,28 @@ window.pollDetailedLogs = () => {
             const missRes = await fetch(`http://${host}/api/v2.0.0/mission_queue`, { headers });
             if (missRes.ok) {
                 const missions = await missRes.json();
-                if (Array.isArray(missions)) { // REMOVED length > 0 CHECK
-                    const activeQueue = missions.filter(m => m.state === 'Pending' || m.state === 'Executing' || m.state === 'Starting');
+                if (Array.isArray(missions)) {
+                    // Filter for active states
+                    const activeQueueSummary = missions.filter(m => {
+                        const st = (m.state || '').toUpperCase();
+                        return st === 'PENDING' || st === 'EXECUTING' || st === 'STARTING';
+                    });
+
+                    // [CRITICAL FIX] Fetch details for active missions because summary lacks mission_id
+                    const detailedActiveQueue = [];
+                    for (const m of activeQueueSummary) {
+                        try {
+                            const dRes = await fetch(`http://${host}/api/v2.0.0/mission_queue/${m.id}`, { headers });
+                            if (dRes.ok) {
+                                detailedActiveQueue.push(await dRes.json());
+                            }
+                        } catch (err) { /* ignore single drop */ }
+                    }
+
+                    // Update Queue State Text UI
                     const elState = document.getElementById('mirMissionQueueState');
                     if (elState) {
-                        if (activeQueue.length === 0) {
+                        if (activeQueueSummary.length === 0) {
                             elState.innerText = "—";
                             elState.style.color = "#666";
                             if (lastMissionQueueState !== 'None') {
@@ -656,10 +672,10 @@ window.pollDetailedLogs = () => {
                                 lastMissionQueueState = 'None';
                             }
                         } else {
-                            const m = activeQueue[0];
-                            const st = m.state || "Pending";
+                            const m = activeQueueSummary[0];
+                            const st = (m.state || "PENDING").toUpperCase();
                             elState.innerText = `${st} (ID: ${m.id})`;
-                            elState.style.color = st === "Executing" ? "#4ade80" : "#ffcc00";
+                            elState.style.color = st === "EXECUTING" ? "#4ade80" : "#ffcc00";
                             if (lastMissionQueueState !== `${m.id}-${st}`) {
                                 logMirSystemData(`임무 진행 중: ID ${m.id} - ${st}`, "info");
                                 lastMissionQueueState = `${m.id}-${st}`;
@@ -667,6 +683,7 @@ window.pollDetailedLogs = () => {
                         }
                     }
 
+                    // ... (Keep the existing log appending logic for new missions exactly as it is) ...
                     if (missions.length > 0) {
                         if (lastFetchedMissionId === -1) {
                             lastFetchedMissionId = Math.max(...missions.map(m => m.id || 0));
@@ -692,7 +709,11 @@ window.pollDetailedLogs = () => {
                             }
                         }
                     }
-                    syncMissionQueueUI(activeQueue); // Now safely clears blur when activeQueue is empty
+
+                    // Sync UI using the detailed array containing the mission_ids
+                    if (typeof window.syncMissionQueueUI === 'function') {
+                        window.syncMissionQueueUI(detailedActiveQueue); 
+                    }
                 }
             }
         } catch (e) { }
@@ -740,21 +761,24 @@ window.pollDetailedLogs = () => {
     updateWaypointHighlighting();
 };
 
-function syncMissionQueueUI(activeQueue) {
+window.syncMissionQueueUI = function(activeQueue) {
     const box = document.getElementById('mirMissionListSetup');
     if (!box) return;
+
+    // Safely extract GUIDs from the REAL API QUEUE ONLY
     const activeMissionGuids = new Set(activeQueue.map(m => {
-        const parts = String(m.mission_id).split('/');
+        const parts = String(m.mission_id || m.mission || '').split('/');
         return parts[parts.length - 1];
     }));
+
     const rows = box.querySelectorAll('label.waypoint-item');
     rows.forEach(row => {
         const chk = row.querySelector('input[type="checkbox"]');
         if (!chk) return;
         const guid = chk.value;
 
-        // CRITICAL CHECK: Look at BOTH the real queue and the optimistic local lock
-        if (activeMissionGuids.has(guid) || (typeof optimisticMissions !== 'undefined' && optimisticMissions.has(guid))) {
+        // CRITICAL: Trust the API 100%. No local storage checks.
+        if (activeMissionGuids.has(guid)) {
             row.classList.add('in-queue-mission');
             chk.disabled = true;
             chk.checked = false;
@@ -763,7 +787,7 @@ function syncMissionQueueUI(activeQueue) {
             chk.disabled = false;
         }
     });
-}
+};
 
 function updateWaypointHighlighting() {
     if (!mirCtrl.map || !mirCtrl.map.waypoints) return;
@@ -962,15 +986,6 @@ window.cmdMirClearErr = async () => {
 window.cmdAddMissionToQueue = async () => {
     if (checkedSetupMissions.length === 0) return alert('추가할 미션을 체크해주세요.');
 
-    // [CRITICAL FIX] 1. INSTANT UI FEEDBACK (Optimistic)
-    const box = document.getElementById('mirMissionListSetup');
-    if (box) {
-        box.querySelectorAll('input[type="checkbox"]:checked').forEach(c => {
-            c.disabled = true;
-            c.parentElement.classList.add('in-queue-mission');
-        });
-    }
-
     try {
         const host = getMirHost();
         const headers = getMirHeaders();
@@ -986,7 +1001,6 @@ window.cmdAddMissionToQueue = async () => {
         let successCount = 0;
         let failCount = 0;
         for (const guid of checkedSetupMissions) {
-            optimisticMissions.add(guid); // Protect state
             const res = await fetch(`http://${host}/api/v2.0.0/mission_queue`, { method: 'POST', headers, body: JSON.stringify({ mission_id: guid }) });
             if (res.ok) successCount++;
             else failCount++;
@@ -997,14 +1011,13 @@ window.cmdAddMissionToQueue = async () => {
 
         checkedSetupMissions = [];
 
-        // Let actual polling take over after 3 seconds
-        setTimeout(() => { optimisticMissions.clear(); window.pollDetailedLogs(); }, 3000);
+        // Force rapid polling to catch the API update quickly
         window.pollDetailedLogs();
+        setTimeout(() => { window.pollDetailedLogs(); }, 1000);
+        setTimeout(() => { window.pollDetailedLogs(); }, 2000);
 
     } catch (e) {
         logMirSystemData(`미션 추가 중 오류: ${e.message}`, "err");
-        optimisticMissions.clear();
-        window.pollDetailedLogs(); // Revert UI if completely failed
     }
 };
 

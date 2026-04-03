@@ -1,131 +1,72 @@
-import rclpy
-from rclpy.node import Node
-from turtlesim.msg import Pose
-from rcl_interfaces.msg import Log
-from flask import Flask, jsonify, request, send_file
-from flask_cors import CORS
-import threading
-import random
-import math
-import time
-import io
+import requests
+import hashlib
 import base64
-from PIL import Image
+import time
+import json
 
-app = Flask(__name__)
-CORS(app)
+# ==========================================
+# 1. 설정 (로봇의 실제 IP와 계정 정보로 확인 후 수정하세요)
+# ==========================================
+ROBOT_IP = "192.168.12.20"
+USERNAME = "distributor"
+PASSWORD = "distributor"
 
-robot_data = {"x": 5.5, "y": 5.5, "theta": 0.0, "linear_v": 0.0, "angular_v": 0.0}
-rosout_logs = []
-mission_queue = []
+# ==========================================
+# 2. MiR API 인증 토큰 생성
+# ==========================================
+# MiR API는 비밀번호를 SHA-256으로 해싱한 뒤, '아이디:해시'를 Base64로 인코딩해야 합니다.
+pw_hash = hashlib.sha256(PASSWORD.encode('utf-8')).hexdigest()
+auth_str = f"{USERNAME}:{pw_hash}"
+auth_b64 = base64.b64encode(auth_str.encode('utf-8')).decode('utf-8')
 
-waypoints = [
-    {"guid": f"wp-{i}", "name": f"Waypoint {i}", "pos_x": random.uniform(2.0, 9.0), "pos_y": random.uniform(2.0, 9.0), "type_id": 0, "orientation": random.uniform(0, 360)}
-    for i in range(1, 4)
-]
+HEADERS = {
+    "Authorization": f"Basic {auth_b64}",
+    "Content-Type": "application/json",
+    "Accept-Language": "en_US"
+}
 
-class MirBridgeNode(Node):
-    def __init__(self):
-        super().__init__('mir_bridge_node')
-        self.create_subscription(Pose, '/turtle1/pose', self.pose_cb, 10)
-        self.create_subscription(Log, '/rosout', self.rosout_cb, 10)
+# ==========================================
+# 3. 미션 큐 확인 함수
+# ==========================================
+def check_mission_queue():
+    url = f"http://{ROBOT_IP}/api/v2.0.0/mission_queue"
+    try:
+        response = requests.get(url, headers=HEADERS, timeout=5)
+        if response.status_code == 200:
+            queue_data = response.json()
+            print(f"\n[{time.strftime('%H:%M:%S')}] 현재 미션 큐 상태 (총 {len(queue_data)}개):")
+            
+            if len(queue_data) == 0:
+                print("  -> 큐가 비어 있습니다.")
+                return
 
-    def pose_cb(self, msg):
-        robot_data["x"] = msg.x
-        robot_data["y"] = msg.y
-        robot_data["theta"] = math.degrees(msg.theta) % 360
-        robot_data["linear_v"] = msg.linear_velocity
-        robot_data["angular_v"] = msg.angular_velocity
+            for idx, mission in enumerate(queue_data):
+                # 주요 상태와 ID만 파싱해서 출력
+                m_id = mission.get('id', 'N/A')
+                state = mission.get('state', 'N/A')
+                
+                # API 버전에 따라 mission_id 또는 mission(URL 형태)으로 올 수 있음
+                guid = mission.get('mission_id', mission.get('mission', 'N/A'))
+                
+                print(f"  - [큐 ID: {m_id}] 상태(State): '{state}' | 미션 GUID: {guid}")
+                
+                # 첫 번째(가장 최근) 항목의 원본 데이터 상세 출력
+                if idx == 0:
+                    print("    [가장 최근 미션 원본 데이터 상세]")
+                    print(f"    {json.dumps(mission, indent=4)}")
+        else:
+            print(f"[{time.strftime('%H:%M:%S')}] API 호출 실패: 상태 코드 {response.status_code}")
+    except Exception as e:
+        print(f"통신 에러 발생: {e}")
 
-    def rosout_cb(self, msg):
-        level = "Info"
-        if msg.level >= 40: level = "Error"
-        elif msg.level >= 30: level = "Warning"
-        
-        rosout_logs.insert(0, {
-            "id": int(time.time() * 1000),
-            "module": msg.name,
-            "description": msg.msg,
-            "time": time.strftime("%Y-%m-%dT%H:%M:%S")
-        })
-        if len(rosout_logs) > 50: rosout_logs.pop()
-
-def generate_blank_map():
-    img = Image.new('RGBA', (800, 800), (245, 245, 245, 255))
-    buf = io.BytesIO()
-    img.save(buf, format='PNG')
-    return base64.b64encode(buf.getvalue()).decode('utf-8')
-
-cached_map = generate_blank_map()
-
-@app.route('/api/v2.0.0/status', methods=['GET', 'PUT'])
-def status():
-    return jsonify({
-        "state_id": 3,
-        "state_text": "Ready",
-        "battery_percentage": 95.0,
-        "map_id": "turtlesim_map",
-        "position": {"x": robot_data["x"], "y": robot_data["y"], "orientation": robot_data["theta"]},
-        "velocity": {"linear": robot_data["linear_v"], "angular": robot_data["angular_v"]},
-        "errors": []
-    })
-
-@app.route('/api/v2.0.0/maps/<map_id>', methods=['GET'])
-def map_detail(map_id):
-    return jsonify({"resolution": 0.01375, "origin_x": 0.0, "origin_y": 0.0, "base_map": cached_map})
-
-@app.route('/api/v2.0.0/maps/<map_id>/positions', methods=['GET'])
-def positions(map_id):
-    return jsonify(waypoints)
-
-@app.route('/api/v2.0.0/missions', methods=['GET'])
-def get_missions():
-    return jsonify([{"guid": f"mission-{i}", "name": f"Mission {i}"} for i in range(1, 4)])
-
-@app.route('/api/v2.0.0/mission_queue', methods=['GET', 'POST', 'DELETE'])
-def m_queue():
-    global mission_queue
-    if request.method == 'DELETE':
-        mission_queue = []
-        return "", 204
-    if request.method == 'POST':
-        mission_queue.append({"id": len(mission_queue) + 1, "state": "Executing", "mission_id": request.json.get("mission_id")})
-        return jsonify({"id": len(mission_queue)}), 201
-    return jsonify(mission_queue)
-
-@app.route('/api/v2.0.0/mission_queue/<int:mq_id>', methods=['GET'])
-def mq_detail(mq_id):
-    for m in mission_queue:
-        if m["id"] == mq_id: return jsonify(m)
-    return jsonify({}), 404
-
-@app.route('/api/v2.0.0/log/sys_log', methods=['GET'])
-def sys_log():
-    return jsonify(rosout_logs[:10])
-
-@app.route('/api/v2.0.0/log/error_reports', methods=['GET'])
-def error_reports():
-    return jsonify([])
-
-@app.route('/api/v2.0.0/experimental/diagnostics', methods=['GET'])
-def diagnostics():
-    return jsonify([])
-
-@app.route('/api/v2.0.0/system/protective_scan', methods=['GET'])
-def protective_scan():
-    img = Image.new('RGBA', (200, 200), (0, 0, 0, 0))
-    buf = io.BytesIO()
-    img.save(buf, format='PNG')
-    buf.seek(0)
-    return send_file(buf, mimetype='image/png')
-
-def run_ros():
-    rclpy.init()
-    node = MirBridgeNode()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
-
-if __name__ == '__main__':
-    threading.Thread(target=run_ros, daemon=True).start()
-    app.run(host='0.0.0.0', port=8080, debug=False)
+# ==========================================
+# 4. 실시간 모니터링 실행
+# ==========================================
+if __name__ == "__main__":
+    print(f"MiR 로봇({ROBOT_IP}) API 모니터링을 시작합니다... (종료: Ctrl+C)")
+    try:
+        while True:
+            check_mission_queue()
+            time.sleep(2)  # 2초마다 데이터 갱신
+    except KeyboardInterrupt:
+        print("\n모니터링을 종료합니다.")
