@@ -31,6 +31,15 @@ let mapImgObj = null;
 
 // UR State tracking (received from ROS2 topics)
 let urState = { states: '—', error: '—', estop: false };
+let isUrManualMode = false;
+let isUrEstop = false;
+let isUrUnlock = false;
+let isUrInitial = false;
+
+// Notification System State
+let notifications = [];
+let unreadCount = 0;
+let urdfReqId; 
 
 // -----------------------------------------------
 // Authentication & Host
@@ -109,7 +118,7 @@ window.closeCustomPrompt = (isOk) => {
 // Utility Loggers
 // -----------------------------------------------
 function logMirSystemData(msg, type = "info") {
-    // Log into both the Setup and Main mini-log panels
+    // REMOVED THE RESTRICTIVE FILTER HERE! All logs (info, ok, warn, err) must pass.
     ['systemLogSetup', 'systemLogMain'].forEach(id => {
         const sysLog = document.getElementById(id);
         if (!sysLog) return;
@@ -123,8 +132,14 @@ function logMirSystemData(msg, type = "info") {
 }
 
 function appendLogRow(tbodyId, state, module, msg, timestamp) {
+    const s = state.toUpperCase();
+    
+    // Notifications for Critical Errors (Toast removed per requirement)
+    if (s.includes("ERROR") || s.includes("FATAL") || s.includes("FAIL")) {
+        addNotification(`[ERROR] ${module}: ${msg}`, 'err');
+    }
+
     if (tbodyId === 'mirLogTbody') {
-        const s = state.toUpperCase();
         // Allow tracking of general status updates and events alongside errors
         if (!s.includes("ERR") && !s.includes("FAIL") && !s.includes("FATAL") && !s.includes("WARN") && !s.includes("INFO") && !s.includes("STATE") && !s.includes("MISSION")) {
             return;
@@ -136,7 +151,6 @@ function appendLogRow(tbodyId, state, module, msg, timestamp) {
     const tr = document.createElement('tr');
 
     let lvlClass = "lv-info";
-    const s = state.toUpperCase();
     if (s.includes("ERROR") || s.includes("FATAL") || s.includes("FAIL")) lvlClass = "lv-error";
     else if (s.includes("WARN")) lvlClass = "lv-warn";
     else if (s.includes("STATE") || s.includes("MISSION")) lvlClass = "lv-info";
@@ -150,6 +164,85 @@ function appendLogRow(tbodyId, state, module, msg, timestamp) {
     tbody.prepend(tr);
     while (tbody.children.length > 100) tbody.removeChild(tbody.lastChild);
 }
+
+// -----------------------------------------------
+// Notification & Toast System
+// -----------------------------------------------
+window.addNotification = (msg, type = 'info') => {
+    const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+    notifications.unshift({ msg, type, ts });
+    unreadCount++;
+    updateNotificationUI();
+};
+
+function updateNotificationUI() {
+    const badge = document.getElementById('notificationBadge');
+    const list = document.getElementById('notificationList');
+    if (!badge || !list) return;
+
+    // Badge display logic: Show red dot without numbers when unreadCount > 0
+    if (badge) {
+        if (unreadCount > 0) {
+            badge.innerText = "";
+            badge.style.display = 'block';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    if (notifications.length === 0) {
+        list.innerHTML = '<div style="padding:15px; color:#aaa; font-size:11px; text-align:center;">No recent notifications.</div>';
+    } else {
+        list.innerHTML = notifications.map(n => `
+            <div class="notification-item ${n.type}">
+                <div style="font-weight:700; font-size:10px; opacity:0.6;">${n.ts}</div>
+                <div>${n.msg}</div>
+            </div>
+        `).join('');
+    }
+}
+
+window.toggleNotificationDropdown = () => {
+    const el = document.getElementById('notificationDropdown');
+    if (!el) return;
+    const isVisible = el.style.display === 'flex';
+    el.style.display = isVisible ? 'none' : 'flex';
+    if (!isVisible) {
+        unreadCount = 0;
+        updateNotificationUI();
+    }
+};
+
+window.clearNotifications = () => {
+    notifications = [];
+    unreadCount = 0;
+    updateNotificationUI();
+};
+
+window.updateDashboardErrorState = (isError) => {
+    const el = document.getElementById('topic-error-main');
+    if (!el) return;
+    if (isError) {
+        el.textContent = "ERROR";
+        el.style.color = "#ff4d4d";
+    } else {
+        el.textContent = "OK";
+        el.style.color = "#4ade80";
+    }
+};
+
+window.showToast = (msg, type = 'msg') => {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `<span>${msg}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 500);
+    }, 4000);
+};
 
 function logUr(msg) {
     const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
@@ -180,6 +273,9 @@ window.cmdSaveLog = (tbodyId, filename) => {
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(savePath, csv, 'utf8');
         logMirSystemData(`로그 저장 완료: ${savePath}`, 'ok');
+
+        // Success Notification
+        addNotification(`Success: Log saved to ${filename}`, 'ok');
     } catch (e) {
         logMirSystemData(`로그 저장 실패: ${e.message}`, 'err');
     }
@@ -207,7 +303,7 @@ function pollTopicHeartbeats() {
     const alive = (ts, timeout = 5000) => ts && (now - ts) < timeout;
 
     updateTopicStatus('topic-log-setup', alive(hb.log, 60000), config.ur.logTopic);
-    updateTopicStatus('topic-unlock-setup', true, config.ur.unlockTopic);
+    // updateTopicStatus('topic-unlock-setup', true, config.ur.unlockTopic); // REMOVE THIS LINE
     updateTopicStatus('topic-estop-setup', true, config.ur.estopTopic);
     updateTopicStatus('topic-joint-setup', alive(hb.joint), config.ur.jointTopic);
     updateTopicStatus('topic-rosout-setup', alive(hb.rosout, 60000), config.ur.rosoutTopic);
@@ -255,63 +351,82 @@ async function fetchProtectiveScanAPI() {
 }
 
 function drawProtectiveScanOverlay(img) {
-    if (!mapImgObj) return;
-
     ['lidarCanvas', 'lidarCanvasSetup'].forEach(id => {
         const cvs = document.getElementById(id);
-        if (cvs && mapImgObj) {
+        if (!cvs) return;
+
+        const isSetup = id.includes('Setup');
+        const chkGrid = document.getElementById(isSetup ? 'chkGridSetup' : 'chkGrid');
+        const chkLidar = document.getElementById(isSetup ? 'chkLidarSetup' : 'chkLidar');
+
+        // Always ensure canvas dimensions if possible, but dont return early if mapImgObj is missing
+        if (mapImgObj) {
             if (cvs.width !== mapImgObj.width || cvs.height !== mapImgObj.height) {
                 cvs.width = mapImgObj.width;
                 cvs.height = mapImgObj.height;
             }
+        }
 
-            const ctx = cvs.getContext('2d');
-            ctx.clearRect(0, 0, cvs.width, cvs.height);
+        const ctx = cvs.getContext('2d');
+        ctx.clearRect(0, 0, cvs.width, cvs.height);
 
-            const r = globalMapMeta.r || 0.05;
-            const ox = globalMapMeta.ox || 0;
-            const oy = globalMapMeta.oy || 0;
+        const r = globalMapMeta.r || 0.05;
+        const ox = globalMapMeta.ox || 0;
+        const oy = globalMapMeta.oy || 0;
 
+        // 1. Draw Grid (Independent of Robot/Map loading)
+        if (chkGrid && chkGrid.checked) {
+            ctx.strokeStyle = "rgba(0, 0, 0, 0.08)";
+            ctx.lineWidth = 0.5;
+            const pixelsPerMeter = 1.0 / r;
+            const gridOffset = (ox % 1.0) / r;
+            const yOffset = (oy % 1.0) / r;
+
+            ctx.beginPath();
+            for (let x = -gridOffset; x < cvs.width; x += pixelsPerMeter) {
+                ctx.moveTo(x, 0); ctx.lineTo(x, cvs.height);
+            }
+            for (let y = cvs.height + yOffset; y > 0; y -= pixelsPerMeter) {
+                ctx.moveTo(0, y); ctx.lineTo(cvs.width, y);
+            }
+            ctx.stroke();
+        }
+
+        // 2. Draw Robot & LiDAR Scan (Requiring map context for sizing)
+        if (mapImgObj) {
             const rx = (globalRobotPosition.x - ox) / r;
             const ry = mapImgObj.height - ((globalRobotPosition.y - oy) / r);
-
             const rad = globalRobotPosition.orientation * (Math.PI / 180);
 
             ctx.save();
             ctx.translate(rx, ry);
             ctx.rotate(-rad);
 
-            if (img) {
+            // Draw LiDAR Scan ONLY if checkbox is checked
+            if (img && chkLidar && chkLidar.checked) {
                 const scanRes = 0.05;
-                const mapRes = globalMapMeta.r || 0.05;
-                const scale = scanRes / mapRes;
+                const scale = scanRes / r;
                 ctx.drawImage(img, (-img.width / 2) * scale, (-img.height / 2) * scale, img.width * scale, img.height * scale);
             }
 
+            // Draw Robot Arrow
             if (customArrowImg.complete && customArrowImg.naturalHeight !== 0) {
                 const iconSize = 40;
-                ctx.save();
-                ctx.rotate(Math.PI / 2);
+                ctx.save(); ctx.rotate(Math.PI / 2);
                 ctx.drawImage(customArrowImg, -iconSize / 2, -iconSize / 2, iconSize, iconSize);
                 ctx.restore();
             } else {
                 ctx.fillStyle = '#4285F4';
-                ctx.beginPath();
-                ctx.arc(0, 0, 12, 0, 2 * Math.PI);
-                ctx.fill();
+                ctx.beginPath(); ctx.arc(0, 0, 12, 0, 2 * Math.PI); ctx.fill();
             }
-
             ctx.restore();
         }
     });
 }
 
 window.toggleLidar = (which, visible) => {
-    const ids = which === 'setup' ? ['lidarCanvasSetup'] : ['lidarCanvas'];
-    ids.forEach(id => {
-        const c = document.getElementById(id);
-        if (c) c.style.display = visible ? 'block' : 'none';
-    });
+    // [FIX] Toggling LiDAR shouldn't hide the whole canvas, as the Grid is on it.
+    // The draw loop now dynamically checks the checkbox state.
 };
 
 // -----------------------------------------------
@@ -378,24 +493,20 @@ window.cmdRefreshSetupMap = async () => {
         globalMapMeta.ox = mapData.origin_x || 0;
         globalMapMeta.oy = mapData.origin_y || 0;
 
-        if (mapData.base_map) {
+        const b64Raw = mapData.map || mapData.base_map;
+        if (b64Raw) {
+            const b64 = b64Raw.includes(',') ? b64Raw.split(',')[1] : b64Raw;
             const img = new Image();
-            img.src = "data:image/png;base64," + mapData.base_map;
+            img.src = "data:image/png;base64," + b64;
             img.onload = () => {
                 mapImgObj = img;
                 globalMapMeta.w = img.width;
                 globalMapMeta.h = img.height;
 
-                ['mapCanvas', 'setupMapCanvas'].forEach(id => {
-                    const cvs = document.getElementById(id);
-                    if (cvs) {
-                        cvs.width = img.width;
-                        cvs.height = img.height;
-                        const ctx = cvs.getContext('2d');
-                        ctx.clearRect(0, 0, cvs.width, cvs.height);
-                        ctx.drawImage(img, 0, 0);
-                    }
-                });
+                // Pass data back to controller and let it draw the waypoints/chargers
+                mirCtrl.map.baseImage = img;
+                mirCtrl.map.positions = positions;
+                mirCtrl.drawMap();
 
                 logMirSystemData(`맵 렌더링 완료 (${positions.length}개 위치)`, "ok");
             };
@@ -403,11 +514,43 @@ window.cmdRefreshSetupMap = async () => {
 
         updateWaypointCheckboxes();
         updateMirPositionsList();
+        updateMapScaleBar();
 
     } catch (e) {
         logMirSystemData(`맵 갱신 실패: ${e.message}`, "err");
     }
 };
+
+// -----------------------------------------------
+// Map Scale Bar Logic
+// -----------------------------------------------
+function updateMapScaleBar() {
+    const res = globalMapMeta.r || 0.05;
+    // We want a bar representing 1 meter
+    const pixelsPerMeter = 1.0 / res;
+    
+    // Choose a reasonable length (e.g., if 1m is too short, show 2m)
+    let displayMeters = 1;
+    let barWidth = pixelsPerMeter;
+    
+    if (barWidth < 40) {
+        displayMeters = 2;
+        barWidth = pixelsPerMeter * 2;
+    } else if (barWidth > 200) {
+        displayMeters = 0.5;
+        barWidth = pixelsPerMeter * 0.5;
+    }
+
+    ['scaleLineMain', 'scaleLineSetup'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.width = `${barWidth}px`;
+    });
+    
+    ['scaleLabelMain', 'scaleLabelSetup'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = `${displayMeters}m`;
+    });
+}
 
 // -----------------------------------------------
 // MiR Status Polling (main loop) - 실시간 전용
@@ -418,153 +561,179 @@ let lastFetchedSysLogId = -1;
 let lastActiveErrorsCount = 0;
 let lastMissionQueueState = '';
 
-window.pollDetailedLogs = async () => {
+window.pollDetailedLogs = () => {
     const host = getMirHost();
     const headers = getMirHeaders();
 
-    try {
-        const statRes = await fetch(`http://${host}/api/v2.0.0/status`, { headers });
-        if (statRes.ok) {
-            const stat = await statRes.json();
-            if (stat.position) globalRobotPosition = stat.position;
-            if (stat.map_id && stat.map_id !== currentMapId) {
-                currentMapId = stat.map_id;
-                window.cmdRefreshSetupMap();
-            }
-
-            if (stat.state_text !== lastMirState || stat.mission_text !== lastMissionText) {
-                const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                const missionTxt = stat.mission_text ? stat.mission_text.substring(0, 40) : 'Idle';
-                appendLogRow('mirLogTbody', 'STATE', 'System', `[${stat.state_text}] ${missionTxt}`, ts);
-                if (stat.state_text !== lastMirState) {
-                    logMirSystemData(`상태 변경: ${stat.state_text}`, 'info');
+    // 1. Status Polling (Independent)
+    (async () => {
+        try {
+            const statRes = await fetch(`http://${host}/api/v2.0.0/status`, { headers });
+            if (statRes.ok) {
+                const stat = await statRes.json();
+                if (stat.position) globalRobotPosition = stat.position;
+                if (stat.map_id && stat.map_id !== currentMapId) {
+                    currentMapId = stat.map_id;
+                    window.cmdRefreshSetupMap();
                 }
-                lastMirState = stat.state_text;
-                lastMissionText = stat.mission_text;
-            }
 
-            const activeErrors = stat.errors || [];
-            if (activeErrors.length !== lastActiveErrorsCount && activeErrors.length > 0) {
-                const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                activeErrors.forEach(err => {
-                    appendLogRow('mirLogTbody', 'ERROR', err.module || 'Unknown', err.description || 'No description', ts);
-                });
-                lastActiveErrorsCount = activeErrors.length;
-            } else if (activeErrors.length === 0) {
-                lastActiveErrorsCount = 0;
-            }
-        }
-    } catch (e) { }
-
-    try {
-        const sumRes = await fetch(`http://${host}/api/v2.0.0/log/error_reports`, { headers });
-        if (sumRes.ok) {
-            const logs = await sumRes.json();
-            if (Array.isArray(logs) && logs.length > 0) {
-                if (lastFetchedErrorId === -1) {
-                    lastFetchedErrorId = Math.max(...logs.map(l => l.id || 0));
-                } else {
-                    const newLogs = logs.filter(log => (log.id || 0) > lastFetchedErrorId);
-                    if (newLogs.length > 0) {
-                        lastFetchedErrorId = Math.max(...newLogs.map(l => l.id || 0));
-                        for (const log of newLogs) {
-                            try {
-                                const detailRes = await fetch(`http://${host}/api/v2.0.0/log/error_reports/${log.id}`, { headers });
-                                if (detailRes.ok) {
-                                    const detail = await detailRes.json();
-                                    const module = detail.module || 'System';
-                                    const message = detail.description || '상세 없음';
-                                    const timeStr = detail.time ? new Date(detail.time).toLocaleTimeString('ko-KR', { hour12: false }) : new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                                    appendLogRow('mirLogTbody', 'ERROR', module, message, timeStr);
-                                    logMirSystemData(`[새 에러] ${module}: ${message}`, "err");
-                                }
-                            } catch (e) { }
-                        }
+                if (stat.state_text !== lastMirState || stat.mission_text !== lastMissionText) {
+                    const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+                    const missionTxt = stat.mission_text ? stat.mission_text.substring(0, 40) : 'Idle';
+                    appendLogRow('mirLogTbody', 'STATE', 'System', `[${stat.state_text}] ${missionTxt}`, ts);
+                    if (stat.state_text !== lastMirState) {
+                        logMirSystemData(`상태 변경: ${stat.state_text}`, 'info');
                     }
+                    lastMirState = stat.state_text;
+                    lastMissionText = stat.mission_text;
+                }
+
+                const activeErrors = stat.errors || [];
+                if (activeErrors.length !== lastActiveErrorsCount && activeErrors.length > 0) {
+                    const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+                    activeErrors.forEach(err => {
+                        appendLogRow('mirLogTbody', 'ERROR', err.module || 'Unknown', err.description || 'No description', ts);
+                    });
+                    lastActiveErrorsCount = activeErrors.length;
+                } else if (activeErrors.length === 0) {
+                    lastActiveErrorsCount = 0;
                 }
             }
-        }
-    } catch (e) { }
+        } catch (e) { }
+    })();
 
-    try {
-        const missRes = await fetch(`http://${host}/api/v2.0.0/mission_queue`, { headers });
-        if (missRes.ok) {
-            const missions = await missRes.json();
-            if (Array.isArray(missions) && missions.length > 0) {
-                const activeQueue = missions.filter(m => m.state === 'Pending' || m.state === 'Executing' || m.state === 'Starting');
-                const elState = document.getElementById('mirMissionQueueState');
-                if (elState) {
-                    if (activeQueue.length === 0) {
-                        elState.innerText = "—";
-                        elState.style.color = "#666";
-                        if (lastMissionQueueState !== 'None') {
-                            logMirSystemData("모든 임무가 종료되었습니다.", "info");
-                            lastMissionQueueState = 'None';
-                        }
+    // 2. Error Reports Polling (Independent)
+    (async () => {
+        try {
+            const sumRes = await fetch(`http://${host}/api/v2.0.0/log/error_reports`, { headers });
+            if (sumRes.ok) {
+                const logs = await sumRes.json();
+                if (Array.isArray(logs)) {
+                    if (logs.length === 0) {
+                        lastFetchedErrorId = 0; // Safe fallback for empty array
+                    } else if (lastFetchedErrorId === -1) {
+                        lastFetchedErrorId = Math.max(...logs.map(l => l.id || 0));
                     } else {
-                        const m = activeQueue[0];
-                        const st = m.state || "Pending";
-                        elState.innerText = `${st} (ID: ${m.id})`;
-                        elState.style.color = st === "Executing" ? "#4ade80" : "#ffcc00";
-                        if (lastMissionQueueState !== `${m.id}-${st}`) {
-                            logMirSystemData(`임무 진행 중: ID ${m.id} - ${st}`, "info");
-                            lastMissionQueueState = `${m.id}-${st}`;
+                        const newLogs = logs.filter(log => (log.id || 0) > lastFetchedErrorId);
+                        if (newLogs.length > 0) {
+                            lastFetchedErrorId = Math.max(...newLogs.map(l => l.id || 0));
+                            for (const log of newLogs) {
+                                try {
+                                    const detailRes = await fetch(`http://${host}/api/v2.0.0/log/error_reports/${log.id}`, { headers });
+                                    if (detailRes.ok) {
+                                        const detail = await detailRes.json();
+                                        const module = detail.module || 'System';
+                                        const message = detail.description || '상세 없음';
+                                        const timeStr = detail.time ? new Date(detail.time).toLocaleTimeString('ko-KR', { hour12: false }) : new Date().toLocaleTimeString('ko-KR', { hour12: false });
+                                        appendLogRow('mirLogTbody', 'ERROR', module, message, timeStr);
+                                        logMirSystemData(`[새 에러] ${module}: ${message}`, "err");
+                                    }
+                                } catch (e) { }
+                            }
                         }
                     }
                 }
-
-                if (lastFetchedMissionId === -1) {
-                    lastFetchedMissionId = Math.max(...missions.map(m => m.id || 0));
-                } else {
-                    const newMissions = missions.filter(m => (m.id || 0) > lastFetchedMissionId);
-                    if (newMissions.length > 0) {
-                        lastFetchedMissionId = Math.max(...newMissions.map(m => m.id || 0));
-                        for (const m of newMissions) {
-                            try {
-                                const detailRes = await fetch(`http://${host}/api/v2.0.0/mission_queue/${m.id}`, { headers });
-                                if (detailRes.ok) {
-                                    const detail = await detailRes.json();
-                                    const state = detail.state || 'Unknown';
-                                    const source = (detail.mission_id || 'Unknown').substring(0, 20);
-                                    const message = (detail.message || 'No message').substring(0, 40);
-                                    const timeStr = detail.finished || detail.started || new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                                    appendLogRow('mirLogTbody', `MISSION ${state}`, source, message, timeStr);
-                                }
-                            } catch (e) { }
-                        }
-                    }
-                }
-                syncMissionQueueUI(activeQueue);
             }
-        }
-    } catch (e) { }
+        } catch (e) { }
+    })();
 
-    try {
-        const sysLogRes = await fetch(`http://${host}/api/v2.0.0/log/sys_log`, { headers });
-        if (sysLogRes.ok) {
-            const logs = await sysLogRes.json();
-            if (Array.isArray(logs) && logs.length > 0) {
-                if (lastFetchedSysLogId === -1) {
-                    lastFetchedSysLogId = Math.max(...logs.map(l => l.id || 0));
-                } else {
-                    const newLogs = logs.filter(log => (log.id || 0) > lastFetchedSysLogId);
-                    if (newLogs.length > 0) {
-                        lastFetchedSysLogId = Math.max(...newLogs.map(l => l.id || 0));
-                        for (const log of newLogs) {
+    // 3. Mission Queue Polling (Independent)
+    (async () => {
+        try {
+            const missRes = await fetch(`http://${host}/api/v2.0.0/mission_queue`, { headers });
+            if (missRes.ok) {
+                const missions = await missRes.json();
+                if (Array.isArray(missions) && missions.length > 0) {
+                    const activeQueue = missions.filter(m => m.state === 'Pending' || m.state === 'Executing' || m.state === 'Starting');
+                    const elState = document.getElementById('mirMissionQueueState');
+                    if (elState) {
+                        if (activeQueue.length === 0) {
+                            elState.innerText = "—";
+                            elState.style.color = "#666";
+                            if (lastMissionQueueState !== 'None') {
+                                logMirSystemData("모든 임무가 종료되었습니다.", "info");
+                                lastMissionQueueState = 'None';
+                            }
+                        } else {
+                            const m = activeQueue[0];
+                            const st = m.state || "Pending";
+                            elState.innerText = `${st} (ID: ${m.id})`;
+                            elState.style.color = st === "Executing" ? "#4ade80" : "#ffcc00";
+                            if (lastMissionQueueState !== `${m.id}-${st}`) {
+                                logMirSystemData(`임무 진행 중: ID ${m.id} - ${st}`, "info");
+                                lastMissionQueueState = `${m.id}-${st}`;
+                            }
+                        }
+                    }
+
+                    if (lastFetchedMissionId === -1) {
+                        lastFetchedMissionId = Math.max(...missions.map(m => m.id || 0));
+                    } else {
+                        const newMissions = missions.filter(m => (m.id || 0) > lastFetchedMissionId);
+                        if (newMissions.length > 0) {
+                            lastFetchedMissionId = Math.max(...newMissions.map(m => m.id || 0));
+                            for (const m of newMissions) {
+                                try {
+                                    const detailRes = await fetch(`http://${host}/api/v2.0.0/mission_queue/${m.id}`, { headers });
+                                    if (detailRes.ok) {
+                                        const detail = await detailRes.json();
+                                        const state = detail.state || 'Unknown';
+                                        let missionName = mirCtrl.getMissionName ? mirCtrl.getMissionName(detail.mission_id) : null;
+                                        if (!missionName) missionName = (detail.mission_id || 'Unknown').substring(0, 8);
+                                        const source = missionName;
+                                        const message = (detail.message || 'No message').substring(0, 40);
+                                        const timeStr = detail.finished || detail.started || new Date().toLocaleTimeString('ko-KR', { hour12: false });
+                                        appendLogRow('mirLogTbody', `MISSION ${state}`, source, message, timeStr);
+                                    }
+                                } catch (e) { }
+                            }
+                        }
+                    }
+                    syncMissionQueueUI(activeQueue);
+                }
+            }
+        } catch (e) { }
+    })();
+
+    // 4. System Logs Polling (Independent)
+    (async () => {
+        try {
+            const sysLogRes = await fetch(`http://${host}/api/v2.0.0/log/sys_log`, { headers });
+            if (sysLogRes.ok) {
+                const logs = await sysLogRes.json();
+                if (Array.isArray(logs) && logs.length > 0) {
+                    if (lastFetchedSysLogId === -1) {
+                        lastFetchedSysLogId = Math.max(...logs.map(l => l.id || 0));
+                        // Render initial logs
+                        const initialLogs = logs.slice(-15);
+                        for (const log of initialLogs) {
                             let level = "INFO";
                             if (log.description && (log.description.includes("Error") || log.description.includes("Fail"))) level = "ERROR";
                             else if (log.description && (log.description.includes("Warning") || log.description.includes("Warn"))) level = "WARN";
                             const module = log.module || "System";
-                            const message = log.description || "Log entry";
                             const timeStr = log.time ? new Date(log.time).toLocaleTimeString('ko-KR', { hour12: false }) : new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                            appendLogRow('mirLogTbody', level, module, message, timeStr);
-                            logMirSystemData(message, level === "ERROR" ? "err" : level === "WARN" ? "warn" : "info");
+                            appendLogRow('mirLogTbody', level, module, log.description, timeStr);
+                        }
+                    } else {
+                        const newLogs = logs.filter(log => (log.id || 0) > lastFetchedSysLogId);
+                        if (newLogs.length > 0) {
+                            lastFetchedSysLogId = Math.max(...newLogs.map(l => l.id || 0));
+                            for (const log of newLogs) {
+                                let level = "INFO";
+                                if (log.description && (log.description.includes("Error") || log.description.includes("Fail"))) level = "ERROR";
+                                else if (log.description && (log.description.includes("Warning") || log.description.includes("Warn"))) level = "WARN";
+                                const module = log.module || "System";
+                                const message = log.description || "Log entry";
+                                const timeStr = log.time ? new Date(log.time).toLocaleTimeString('ko-KR', { hour12: false }) : new Date().toLocaleTimeString('ko-KR', { hour12: false });
+                                appendLogRow('mirLogTbody', level, module, message, timeStr);
+                                logMirSystemData(message, level === "ERROR" ? "err" : level === "WARN" ? "warn" : "info");
+                            }
                         }
                     }
                 }
             }
-        }
-    } catch (e) { }
+        } catch (e) { }
+    })();
     updateWaypointHighlighting();
 };
 
@@ -688,18 +857,7 @@ function updateMirPositionsList() {
         item.className = 'waypoint-item';
         item.dataset.guid = p.guid;
         item.innerHTML = `<span>${p.icon} ${p.name || 'Unnamed'}</span><span style="font-size:9px; color:#555;">${p.label}</span>`;
-        item.onclick = () => {
-            document.querySelectorAll('#mirPositionsList .waypoint-item').forEach(el => el.classList.remove('active-item'));
-            item.classList.add('active-item');
-            const checkboxes = document.querySelectorAll('#waypointCheckboxList input[type="checkbox"]');
-            checkboxes.forEach(chk => {
-                if (chk.value === p.guid) {
-                    chk.checked = true;
-                    handleCheckboxChange(chk, p.guid);
-                    chk.parentElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }
-            });
-        };
+        // Removed onclick logic to make it Read-Only legend as per corrected requirement
         elList.appendChild(item);
     });
 }
@@ -832,10 +990,48 @@ window.cmdClearMissionQueue = async () => {
     }
 };
 
-window.cmdUrManualMode = () => urCtrl.publishManualMode();
-window.cmdUrUnlock = () => urCtrl.publishUnlock();
-window.cmdUrEstop = () => urCtrl.publishEstop();
-window.cmdSetInitialPosition = () => urCtrl.publishBoolTrigger(config.ur.initialPoseTopic || '/ur_initial_pose');
+window.cmdUrManualMode = () => {
+    isUrManualMode = !isUrManualMode;
+    const el = document.getElementById('topic-states-main');
+    if (el) {
+        el.textContent = isUrManualMode ? "MANUAL" : "AUTO";
+        el.style.color = isUrManualMode ? "orange" : "#4ade80";
+    }
+    urCtrl.publishManualMode(isUrManualMode);
+};
+
+window.cmdUrUnlock = () => {
+    isUrUnlock = !isUrUnlock;
+    const el = document.getElementById('topic-unlock-setup');
+    if (el) {
+        el.textContent = isUrUnlock ? "UNLOCKED" : "LOCKED";
+        el.style.color = isUrUnlock ? "#4ade80" : "#aaa";
+    }
+    urCtrl.publishUnlock(isUrUnlock);
+};
+
+window.cmdUrEstop = () => {
+    isUrEstop = !isUrEstop;
+    ['topic-estop-main', 'topic-estop-setup'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = isUrEstop ? "ENGAGED" : "OK";
+            el.style.color = isUrEstop ? "#ff4d4d" : "#4ade80";
+        }
+    });
+    urCtrl.publishEstop(isUrEstop);
+};
+
+window.cmdSetInitialPosition = () => {
+    isUrInitial = !isUrInitial;
+    const btns = document.querySelectorAll('button[onclick="cmdSetInitialPosition()"]');
+    btns.forEach(btn => {
+        btn.style.backgroundColor = isUrInitial ? "#4ade80" : "";
+        btn.style.color = isUrInitial ? "#fff" : "";
+        btn.style.borderColor = isUrInitial ? "#4ade80" : "";
+    });
+    urCtrl.publishInitialPose(isUrInitial);
+};
 
 window.cmdAdjustRobotPosition = async () => {
     const curPos = globalRobotPosition || { x: 0, y: 0, orientation: 0 };
@@ -871,6 +1067,9 @@ window.cmdCaptureImage = () => {
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(savePath, buffer);
         logUr(`[OK] 이미지 저장 완료: ${savePath}`);
+
+        // Success Notification
+        addNotification(`Success: Image captured to Pictures folder`, 'ok');
     } catch (e) { }
 };
 
@@ -931,8 +1130,11 @@ function initROS3DViewer() {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     window.shared3DViewer = { renderer, camera, scene, robot: null };
 
-    // Initially attach to Main Tab
-    const initialContainer = document.getElementById('urdf-viewer');
+    // Initially attach to the currently active tab
+    const isSetupActive = document.getElementById('tabSetup').classList.contains('active');
+    const targetId = isSetupActive ? 'urdf-viewer-setup' : 'urdf-viewer';
+    const initialContainer = document.getElementById(targetId);
+
     if (initialContainer) {
         initialContainer.appendChild(renderer.domElement);
         const w = initialContainer.clientWidth || 800;
@@ -967,7 +1169,7 @@ function initROS3DViewer() {
     let hasLoggedMismatch = false;
 
     const renderLoop = function () {
-        requestAnimationFrame(renderLoop);
+        urdfReqId = requestAnimationFrame(renderLoop);
         const robot = window.shared3DViewer.robot;
         
         if (robot && Object.keys(globalTargetJoints).length > 0) {
@@ -996,23 +1198,45 @@ function initROS3DViewer() {
         }
         
         controls.update();
-        // Only render if the element is currently attached and visible
+
+        // [AUTO-RESIZE] Check for parent container visibility and reported size
         const container = renderer.domElement.parentElement;
         if (container && container.clientWidth > 0 && container.clientHeight > 0) {
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            
+            // Trigger three.js resize only if size actually mismatch
+            if (renderer.domElement.width !== width || renderer.domElement.height !== height) {
+                renderer.setSize(width, height, false);
+                camera.aspect = width / height;
+                camera.updateProjectionMatrix();
+            }
             renderer.render(scene, camera);
         }
     };
     renderLoop();
 }
 
+window.cmdRefresh3DViewer = () => {
+    if (urdfReqId) cancelAnimationFrame(urdfReqId);
+    
+    if (window.shared3DViewer && window.shared3DViewer.renderer) {
+        window.shared3DViewer.renderer.dispose();
+    }
+    
+    const c1 = document.getElementById('urdf-viewer');
+    const c2 = document.getElementById('urdf-viewer-setup');
+    if (c1) c1.innerHTML = '';
+    if (c2) c2.innerHTML = '';
+    
+    initROS3DViewer();
+    logUr("[INFO] 3D Viewer refreshed.");
+    addNotification("Success: 3D Viewer context re-initialized", "ok");
+};
+
+
 function startUrStateSubscribers() {
-    urCtrl.setLogCallback((msg) => {
-        if (msg.includes('[UR log]')) {
-            const text = msg.replace('[UR log]', '').trim();
-            const el = document.getElementById('topic-states-main');
-            if (el) { el.textContent = text.substring(0, 30); el.style.color = '#4ade80'; }
-        }
-    });
+    // Legacy subscriber removed in favor of logical status indicators
 }
 
 function startUrEstopMonitor() {
@@ -1021,22 +1245,48 @@ function startUrEstopMonitor() {
     proc.stdout.on('data', (d) => {
         const match = d.toString().match(/data:\s*(true|false)/i);
         if (match) {
-            const isEstop = match[1].toLowerCase() === 'true';
+            const isEstopFromTopic = match[1].toLowerCase() === 'true';
+            
+            // [FIX] If the user has manually engaged the E-Stop (isUrEstop is true),
+            // ignore the background node's "false" spam.
+            if (isUrEstop && !isEstopFromTopic) return;
+
             const el = document.getElementById('topic-estop-main');
-            if (el) { el.textContent = isEstop ? 'ACTIVE' : 'OK'; el.style.color = isEstop ? '#e57373' : '#4ade80'; }
+            if (el) {
+                el.textContent = isEstopFromTopic ? 'ENGAGED' : 'OK';
+                el.style.color = isEstopFromTopic ? '#ff4d4d' : '#4ade80';
+            }
         }
     });
 }
 
 function wireMapCheckboxes() {
-    const wire = (id, field) => {
+    const wire = (id, field, peerId) => {
         const el = document.getElementById(id);
-        if (el) el.onchange = (e) => { mirCtrl[field] = e.target.checked; mirCtrl.drawMap(); };
+        if (el) {
+            el.onchange = (e) => {
+                const checked = e.target.checked;
+                mirCtrl[field] = checked;
+                if (typeof mirCtrl.drawMap === 'function') mirCtrl.drawMap();
+
+                // Sync with peer checkbox
+                if (peerId) {
+                    const peer = document.getElementById(peerId);
+                    if (peer) peer.checked = checked;
+                }
+            };
+        }
     };
-    wire('chkWaypoint', 'showWaypoints');
-    wire('chkCharge', 'showChargers');
-    wire('chkGrid', 'showGrid');
-    wire('chkGridSetup', 'showGrid');
+
+    // Synchronized pairs
+    wire('chkWaypoint', 'showWaypoints', 'chkWaypointSetup');
+    wire('chkWaypointSetup', 'showWaypoints', 'chkWaypoint');
+    wire('chkCharge', 'showChargers', 'chkChargeSetup');
+    wire('chkChargeSetup', 'showChargers', 'chkCharge');
+    wire('chkLidar', 'showLidar', 'chkLidarSetup');
+    wire('chkLidarSetup', 'showLidar', 'chkLidar');
+    wire('chkGrid', 'showGrid', 'chkGridSetup');
+    wire('chkGridSetup', 'showGrid', 'chkGrid');
 
     const interaction = (id) => {
         const cvs = document.getElementById(id);
@@ -1059,15 +1309,39 @@ window.onload = () => {
         const set = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
         set('mirStateText', state.text || "—");
         set('mirBattery', `${(state.battery || 0).toFixed(1)}%`);
+
+        // RESTORED UI BINDINGS
+        set('mirRobotNameSetup', state.robot_name || "Unknown");
+        set('mirSerialSetup', state.serial_number || "Unknown");
+
+        const batMins = state.battery_time_remaining ? Math.floor(state.battery_time_remaining / 60) : 0;
+        set('mirBatteryTime', batMins > 0 ? `${batMins} min` : "—");
+
+        const upHrs = state.uptime ? Math.floor(state.uptime / 3600) : 0;
+        const upMins = state.uptime ? Math.floor((state.uptime % 3600) / 60) : 0;
+        set('mirUptime', state.uptime ? `${upHrs}h ${upMins}m` : "—");
+
+        set('mirMoved', state.moved_distance ? `${state.moved_distance.toFixed(2)} m` : "—");
+        set('mirErrorCount', state.errors ? state.errors.length : 0);
+
+        // ALWAYS sync global position for the map overlay
+        globalRobotPosition.x = state.x;
+        globalRobotPosition.y = state.y;
+        globalRobotPosition.orientation = state.theta;
+
         if (extra && extra.positionsLoaded) { updateWaypointCheckboxes(); updateMirPositionsList(); }
     }, document.getElementById('setupMapCanvas'));
 
     // [HEARTBEAT & LOG FIX] High-timeout for sporadically publishing logs
     urCtrl.startLogSubscriber((msg) => {
-        if (urCtrl.lastHeartbeat) urCtrl.lastHeartbeat.log = new Date();
-        const level = msg.toLowerCase().includes("error") ? "ERROR" : "INFO";
-        const text = msg.msg || msg;
-        appendLogRow('urLogTbody', level, 'UR_Node', text);
+        if (urCtrl.lastHeartbeat) urCtrl.lastHeartbeat.log = new Date(); // Fixes "Waiting" in Setup tab
+        const text = msg.msg || (typeof msg === 'string' ? msg : JSON.stringify(msg));
+        const level = (text.toLowerCase().includes("error") || msg.level >= 40) ? "ERROR" : "INFO";
+        const nodeName = msg.name || 'UR_Node';
+        appendLogRow('urLogTbody', level, nodeName, text);
+
+        // Update Main Dashboard Error Indicator
+        updateDashboardErrorState(level === "ERROR");
     });
 
     urCtrl.startRosoutSubscriber((msg) => {
@@ -1095,5 +1369,6 @@ window.onload = () => {
     setInterval(() => { fetchProtectiveScanAPI(); }, 500);
     renderScenarioButtons();
     initROS3DViewer();
+    updateMapScaleBar();
     logUr("[INFO] ROS2 pipeline initialized.");
 };

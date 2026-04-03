@@ -49,7 +49,7 @@ class URMockNode(Node):
         cam_msg = CompressedImage()
         cam_msg.format = "jpeg"
         cam_msg.data = buf.getvalue()
-        # self.cam_pub.publish(cam_msg)
+        self.cam_pub.publish(cam_msg)
 
 def main(args=None):
     rclpy.init(args=args)

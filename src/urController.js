@@ -47,18 +47,25 @@ class URController {
         this._log(`[INFO] 시나리오 호출 중 (Bool): ${topic}`);
     }
 
-    // Generic Bool Trigger (--once)
-    publishBoolTrigger(topic) {
-        const cmd = `bash -c "source /opt/ros/humble/setup.bash && ros2 topic pub --once ${topic} std_msgs/msg/Bool '{data: true}'"`;
+    // Generic Bool Value Publisher
+    publishBoolValue(topic, boolValue) {
+        const val = boolValue ? 'true' : 'false';
+        const cmd = `bash -c "source /opt/ros/humble/setup.bash && ros2 topic pub --once ${topic} std_msgs/msg/Bool '{data: ${val}}'"`;
         exec(cmd, (err) => {
-            if(err) this._log(`[ERROR] Bool trigger failed on ${topic}: ${err.message}`);
-            else this._log(`[OK] Published Bool true -> ${topic}`);
+            if(err) this._log(`[ERROR] Bool publish failed on ${topic}: ${err.message}`);
+            else this._log(`[OK] Published Bool ${val} -> ${topic}`);
         });
     }
 
-    publishManualMode() { this.publishBoolTrigger(config.ur.manualModeTopic); }
-    publishUnlock()     { this.publishBoolTrigger(config.ur.unlockTopic); }
-    publishEstop()      { this.publishBoolTrigger(config.ur.estopTopic); }
+    // Generic Bool Trigger (--once, hardcoded true)
+    publishBoolTrigger(topic) {
+        this.publishBoolValue(topic, true);
+    }
+
+    publishManualMode(state) { this.publishBoolValue(config.ur.manualModeTopic, state); }
+    publishUnlock(state) { this.publishBoolValue(config.ur.unlockTopic, state); }
+    publishEstop(state) { this.publishBoolValue(config.ur.estopTopic, state); }
+    publishInitialPose(state) { this.publishBoolValue(config.ur.initialPoseTopic || '/ur_initial_pose', state); }
 
     // Publisher for scenario Float32 ID (e.g., /scenario_trigger)
     publishScenarioById(id) {
@@ -69,37 +76,50 @@ class URController {
         });
     }
 
-    // Echo String Log Topic
+    // Echo Log Topic (rcl_interfaces/msg/Log)
     startLogSubscriber(callback) {
         if (this.logProcess) return;
         
         this._log(`[INFO] UR 로그 수신을 시작합니다. (${config.ur.logTopic})`);
-        const cmd = `source /opt/ros/humble/setup.bash && stdbuf -o0 ros2 topic echo ${config.ur.logTopic}`;
+        const cmd = `source /opt/ros/humble/setup.bash && stdbuf -oL ros2 topic echo ${config.ur.logTopic} rcl_interfaces/msg/Log`;
         this.logProcess = spawn('bash', ['-c', cmd]);
-        
+        let buf = "";
+
         this.logProcess.stdout.on('data', (d) => {
-            const lines = d.toString().split('\n');
-            lines.forEach(l => {
-                if (l.includes('data:')) {
-                    const text = l.replace('data:', '').trim().replace(/['"]/g, '');
+            buf += d.toString();
+            const parts = buf.split('---');
+            while(parts.length > 1) {
+                const chunk = parts.shift();
+                buf = parts.join('---');
+                
+                const msgMatch = chunk.match(/msg:\s*(.+)/);
+                const nameMatch = chunk.match(/name:\s*([^\n]+)/);
+                const levelMatch = chunk.match(/level:\s*(\d+)/);
+
+                if (msgMatch) {
                     this.lastHeartbeat.log = new Date();
-                    if (callback) callback(text);
-                    this._log(`[UR log] ${text}`);
+                    
+                    // Clean up potential single quotes from yaml output
+                    let text = msgMatch[1].trim();
+                    if (text.startsWith("'") && text.endsWith("'")) text = text.slice(1, -1);
+
+                    const logObj = {
+                        msg: text,
+                        name: nameMatch ? nameMatch[1].trim().replace(/['"]/g, '') : 'UR_Node',
+                        level: levelMatch ? parseInt(levelMatch[1], 10) : 20
+                    };
+
+                    if (callback) callback(logObj);
                 }
-            });
+            }
         });
         
         this.logProcess.stderr.on('data', (d) => {
-            // Only log real errors from stderr, not ROS init noise
             const line = d.toString();
-            if (line.includes('[FATAL]') || line.includes('[ERROR]')) {
-                this._log(`[ERROR] ${line.trim()}`);
-            }
+            if (line.includes('[FATAL]') || line.includes('[ERROR]')) this._log(`[ERROR] ${line.trim()}`);
         });
 
-        this.logProcess.on('close', () => {
-            this.logProcess = null;
-        });
+        this.logProcess.on('close', () => { this.logProcess = null; });
     }
 
     stopLogSubscriber() {

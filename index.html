@@ -114,6 +114,165 @@
             background: #ffffff;
         }
 
+        /* ===== Notification Bell & Dropdown ===== */
+        .notification-area {
+            margin-left: auto;
+            position: relative;
+            display: flex;
+            align-items: center;
+            padding-right: 15px;
+        }
+
+        .notification-bell {
+            position: relative;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background 0.2s;
+        }
+
+        .notification-bell:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 8px;
+            height: 8px;
+            background: #ff4d4d;
+            border-radius: 50%;
+            border: 2px solid #fafafa;
+        }
+
+        .notification-dropdown {
+            position: absolute;
+            top: 40px;
+            right: 0;
+            width: 300px;
+            max-height: 400px;
+            background: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: none;
+            flex-direction: column;
+            z-index: 2000;
+        }
+
+        .dropdown-header {
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 700;
+            font-size: 13px;
+        }
+
+        .dropdown-list {
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .notification-item {
+            padding: 10px 15px;
+            border-bottom: 1px solid #f9f9f9;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+
+        .notification-item.err { color: #d32f2f; background: #fffcfc; }
+        .notification-item.ok { color: #2e7d32; background: #fcfdfc; }
+
+        .clear-btn {
+            background: transparent;
+            border: 1px solid #ddd;
+            padding: 2px 8px;
+            font-size: 11px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .clear-btn:hover { background: #f5f5f5; }
+
+        /* ===== Toast Notifications ===== */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .toast {
+            min-width: 280px;
+            max-width: 450px;
+            background: #ffffff;
+            border-left: 5px solid #00a5e5;
+            padding: 12px 20px;
+            border-radius: 6px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            font-size: 13px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            animation: toast-in 0.3s ease-out;
+            pointer-events: all;
+        }
+
+        .toast.error { border-left-color: #ff4d4d; color: #d32f2f; }
+        .toast.msg { border-left-color: #00a5e5; color: #333; }
+
+        @keyframes toast-in {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        /* ===== Map Scale Bar ===== */
+        .map-scale-bar {
+            position: absolute;
+            bottom: 35px;
+            right: 15px;
+            background: rgba(255,255,255,0.7);
+            padding: 4px 8px;
+            border-radius: 4px;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 15;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .scale-bar-line {
+            height: 6px;
+            border-left: 2px solid #333;
+            border-right: 2px solid #333;
+            border-bottom: 2px solid #333;
+            margin-bottom: 2px;
+        }
+
+        .scale-bar-label {
+            font-size: 10px;
+            font-weight: 700;
+            font-family: 'Roboto Mono', monospace;
+            color: #333;
+        }
+
         /* ===== Tab Content ===== */
         .tab-content {
             display: none;
@@ -504,7 +663,8 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
-            display: none; /* Hidden until first frame arrives */
+            display: none;
+            /* Hidden until first frame arrives */
         }
 
         .telem-table {
@@ -595,6 +755,42 @@
             gap: 10px;
             margin-bottom: 8px;
         }
+
+        .icon-action-btn {
+            background: transparent;
+            border: none;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            padding: 0;
+        }
+
+        .icon-action-btn:hover {
+            background: rgba(0, 0, 0, 0.05);
+            transform: translateY(-1px);
+        }
+
+        .icon-action-btn:active {
+            background: rgba(0, 0, 0, 0.1);
+            transform: translateY(0);
+        }
+
+        .icon-action-btn img {
+            height: 18px;
+            width: 18px;
+            object-fit: contain;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+
+        .icon-action-btn:hover img {
+            opacity: 1;
+        }
     </style>
 </head>
 
@@ -611,9 +807,28 @@
     </div>
 
     <div class="tabbar">
-        <button class="tab-btn active" id="tabBtnSetup" onclick="switchTab('setup')"> Setup</button>
-        <button class="tab-btn" id="tabBtnMain" onclick="switchTab('main')"> Dashboard</button>
-        <button class="tab-btn logs" id="tabBtnLogs" onclick="switchTab('logs')"> Logs</button>
+        <button class="tab-btn active" id="tabBtnSetup" onclick="switchTab('setup')"><img src="images/setting_icon.png"
+                class="header-icon"> Setup</button>
+        <button class="tab-btn" id="tabBtnMain" onclick="switchTab('main')"><img src="images/dashboard_icon.png"
+                class="header-icon"> Dashboard</button>
+        <button class="tab-btn logs" id="tabBtnLogs" onclick="switchTab('logs')"><img src="images/log_icon.png"
+                class="header-icon"> Logs</button>
+
+        <div class="notification-area">
+            <div class="notification-bell" onclick="toggleNotificationDropdown()">
+                <img src="images/bell_icon.png" style="height:20px;">
+                <span id="notificationBadge" class="notification-badge" style="display:none;"></span>
+            </div>
+            <div id="notificationDropdown" class="notification-dropdown">
+                <div class="dropdown-header">
+                    Notifications
+                    <button class="clear-btn" onclick="clearNotifications()">Clear</button>
+                </div>
+                <div id="notificationList" class="dropdown-list">
+                    <div style="padding:15px; color:#aaa; font-size:11px; text-align:center;">No recent notifications.</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- ==================== SETUP TAB ==================== -->
@@ -642,8 +857,8 @@
                 <div class="panel" data-type="mir" style="flex:1; display:flex; flex-direction:column;">
                     <div class="panel-header">
                         <div><img src="images/mission_icon.png" class="header-icon"> Mission</div>
-                        <button class="titlebar-btn" onclick="fetchAndRenderUserMissions()"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        <button class="icon-action-btn" onclick="fetchAndRenderUserMissions()" title="Refresh Missions">
+                            <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
                     </div>
                     <div class="list-box" id="mirMissionListSetup"
@@ -662,8 +877,8 @@
                 <div class="panel" data-type="center" style="flex: 1; display:flex; flex-direction:column;">
                     <div class="panel-header">
                         <div><img src="images/slam_icon.png" class="header-icon"> Map</div>
-                        <button class="titlebar-btn" onclick="cmdRefreshSetupMap()"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        <button class="icon-action-btn" onclick="cmdRefreshSetupMap()" title="Refresh Map">
+                            <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
                     </div>
                     <div class="map-container" style="flex: 1; min-height: 250px; position:relative;">
@@ -674,11 +889,17 @@
                         <!-- LiDAR Overlay Canvas -->
                         <canvas id="lidarCanvasSetup" class="lidar-canvas" style="display:block;"></canvas>
                         <div class="overlay-layers">
+                            <label><input type="checkbox" id="chkWaypointSetup" checked> <img src="images/position_icon.png" style="height:20px;"> Waypoint</label>
+                            <label><input type="checkbox" id="chkChargeSetup" checked> <img src="images/battery_charge_icon.png" style="height:20px;"> Charge</label>
                             <label><input type="checkbox" id="chkLidarSetup" checked
                                     onchange="toggleLidar('setup', this.checked)"><img src="images/lidar_icon.png"
                                     style="height:20px;"> LiDAR</label>
                             <label><input type="checkbox" id="chkGridSetup"><img src="images/grid_icon.png"
                                     style="height:20px;"> Grid</label>
+                        </div>
+                        <div class="map-scale-bar" id="scaleBarSetup">
+                            <div class="scale-bar-line" id="scaleLineSetup" style="width: 20px;"></div>
+                            <div class="scale-bar-label" id="scaleLabelSetup">1m</div>
                         </div>
                     </div>
                     <div class="flex-row" style="margin-top: 10px;">
@@ -748,8 +969,11 @@
                 </div>
 
                 <div class="panel" data-type="ur" style="flex:1; display:flex; flex-direction:column;">
-                    <div class="panel-header">
+                    <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
                         <div>3D Viewer</div>
+                        <button class="icon-action-btn" onclick="cmdRefresh3DViewer()" title="Refresh 3D Viewer">
+                            <img src="images/refresh_icon.png" alt="Refresh">
+                        </button>
                     </div>
                     <div id="urdf-viewer-setup" style="flex:1; margin-bottom:10px; min-height: 180px;"></div>
                     <div class="flex-row">
@@ -819,8 +1043,8 @@
                 <div class="panel" data-type="mir" style="flex:1; display:flex; flex-direction:column;">
                     <div class="panel-header">
                         <div><img src="images/waypoint_icon.png" class="header-icon"> waypoint</div>
-                        <button class="titlebar-btn" onclick="cmdRefreshSetupMap()"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        <button class="icon-action-btn" onclick="cmdRefreshSetupMap()" title="Refresh Waypoints">
+                            <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
                     </div>
                     <div class="list-box" id="mirPositionsList"
@@ -828,7 +1052,8 @@
                 </div>
 
                 <!-- Waypoint section -->
-                <div class="panel" data-type="mir" id="waypointPanel" style="display:none;">
+                <!-- Waypoint section removed per corrected requirement -->
+                <!-- <div class="panel" data-type="mir" id="waypointPanel" style="display:none;">
                     <div class="panel-header">
                         <div>Waypoint Sequence</div>
                     </div>
@@ -838,7 +1063,7 @@
                         <button class="btn-mir" id="btnPatrol" style="flex:1;"
                             onclick="cmdTogglePatrolCheckbox()">Patrol</button>
                     </div>
-                </div>
+                </div> -->
             </div>
 
             <!-- Center Column: Map -->
@@ -846,8 +1071,8 @@
                 <div class="panel" data-type="center" style="flex: 1; display:flex; flex-direction:column;">
                     <div class="panel-header">
                         <div><img src="images/slam_icon.png" class="header-icon"> Map</div>
-                        <button class="titlebar-btn" onclick="cmdRefreshSetupMap()"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        <button class="icon-action-btn" onclick="cmdRefreshSetupMap()" title="Refresh Map">
+                            <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
                     </div>
 
@@ -860,7 +1085,7 @@
                         <canvas id="lidarCanvas" class="lidar-canvas" style="display:block;"></canvas>
                         <div class="overlay-layers">
                             <label><input type="checkbox" id="chkWaypoint" checked> <img src="images/position_icon.png"
-                                    style="height:20px;"> Waypoint</label>
+                                     style="height:20px;"> Waypoint</label>
                             <label><input type="checkbox" id="chkCharge" checked> <img
                                     src="images/battery_charge_icon.png" style="height:20px;"> Charge</label>
                             <label><input type="checkbox" id="chkLidar" checked
@@ -868,6 +1093,10 @@
                                     style="height:20px;"> LiDAR</label>
                             <label><input type="checkbox" id="chkGrid"><img src="images/grid_icon.png"
                                     style="height:20px;"> Grid</label>
+                        </div>
+                        <div class="map-scale-bar" id="scaleBarMain">
+                            <div class="scale-bar-line" id="scaleLineMain" style="width: 20px;"></div>
+                            <div class="scale-bar-label" id="scaleLabelMain">1m</div>
                         </div>
                     </div>
 
@@ -897,11 +1126,11 @@
                         <tbody>
                             <tr>
                                 <td>states</td>
-                                <td id="topic-states-main" style="color:#aaa;">Waiting</td>
+                                <td id="topic-states-main" style="color:#4ade80;">AUTO</td>
                             </tr>
                             <tr>
                                 <td>error</td>
-                                <td id="topic-error-main" style="color:#aaa;">Waiting</td>
+                                <td id="topic-error-main" style="color:#4ade80;">OK</td>
                             </tr>
                             <tr>
                                 <td>e-stop</td>
@@ -924,8 +1153,11 @@
                 </div>
 
                 <div class="panel" data-type="ur" style="flex:1; display:flex; flex-direction:column;">
-                    <div class="panel-header">
+                    <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
                         <div>3D Viewer</div>
+                        <button class="icon-action-btn" onclick="cmdRefresh3DViewer()" title="Refresh 3D Viewer">
+                            <img src="images/refresh_icon.png" alt="Refresh">
+                        </button>
                     </div>
                     <div id="urdf-viewer" style="flex:1; margin-bottom:10px; min-height: 180px;"></div>
                     <div class="flex-row">
@@ -946,14 +1178,16 @@
                 <div class="panel-header" style="padding-bottom: 5px;">
                     <div><img src="images/mir_icon.jpeg" style="height: 32px; border-radius: 4px;"></div>
                     <div style="display:flex; gap:5px;">
-                        <button class="titlebar-btn" onclick="pollDetailedLogs()"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 5px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        <button class="icon-action-btn" onclick="pollDetailedLogs()" title="Refresh Logs">
+                            <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
-                        <button class="titlebar-btn" onclick="cmdSaveLog('mirLogTbody', 'MiR_Event_Logs')"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 5px; width:auto; height:auto; color:#4caf50; font-weight:bold;">💾
+                        <button class="icon-action-btn" onclick="cmdSaveLog('mirLogTbody', 'MiR_Event_Logs')"
+                            title="Save CSV">
+                            <img src="images/csv_icon.png" alt="Save">
                         </button>
-                        <button class="titlebar-btn" onclick="document.getElementById('mirLogTbody').innerHTML=''"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 5px; width:auto; height:auto; color:#d32f2f; font-weight:bold;">🗑
+                        <button class="icon-action-btn" onclick="document.getElementById('mirLogTbody').innerHTML=''"
+                            title="Clear Logs">
+                            <img src="images/clear_icon.png" alt="Clear">
                         </button>
                     </div>
                 </div>
@@ -981,14 +1215,16 @@
                 <div class="panel-header" style="padding-bottom: 5px;">
                     <div><img src="images/ur_icon.jpg" style="height: 32px; border-radius: 4px;"></div>
                     <div style="display:flex; gap:5px;">
-                        <button class="titlebar-btn" onclick="pollDetailedLogs()"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        <button class="icon-action-btn" onclick="pollDetailedLogs()" title="Refresh Logs">
+                            <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
-                        <button class="titlebar-btn" onclick="cmdSaveLog('urLogTbody', 'UR_Topic_Logs')"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#4caf50; font-weight:bold;">💾
+                        <button class="icon-action-btn" onclick="cmdSaveLog('urLogTbody', 'UR_Topic_Logs')"
+                            title="Save CSV">
+                            <img src="images/csv_icon.png" alt="Save">
                         </button>
-                        <button class="titlebar-btn" onclick="document.getElementById('urLogTbody').innerHTML=''"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#d18b00; font-weight:bold;">🗑
+                        <button class="icon-action-btn" onclick="document.getElementById('urLogTbody').innerHTML=''"
+                            title="Clear Logs">
+                            <img src="images/clear_icon.png" alt="Clear">
                         </button>
                     </div>
                 </div>
@@ -1016,14 +1252,16 @@
                 <div class="panel-header" style="padding-bottom: 5px;">
                     <div><img src="images/system_serical_icon.png" style="height: 32px; border-radius: 4px;"></div>
                     <div style="display:flex; gap:5px;">
-                        <button class="titlebar-btn" onclick="pollDetailedLogs()"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#333; font-weight:bold;">🔄
+                        <button class="icon-action-btn" onclick="pollDetailedLogs()" title="Refresh Logs">
+                            <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
-                        <button class="titlebar-btn" onclick="cmdSaveLog('rosoutTbody', 'ROS2_System_Log')"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#4caf50; font-weight:bold;">💾
+                        <button class="icon-action-btn" onclick="cmdSaveLog('rosoutTbody', 'ROS2_System_Log')"
+                            title="Save CSV">
+                            <img src="images/csv_icon.png" alt="Save">
                         </button>
-                        <button class="titlebar-btn" onclick="document.getElementById('rosoutTbody').innerHTML=''"
-                            style="border:none; background:transparent; font-size:11px; padding:2px 8px; width:auto; height:auto; color:#9c27b0; font-weight:bold;">🗑
+                        <button class="icon-action-btn" onclick="document.getElementById('rosoutTbody').innerHTML=''"
+                            title="Clear Logs">
+                            <img src="images/clear_icon.png" alt="Clear">
                         </button>
                     </div>
                 </div>
@@ -1092,6 +1330,7 @@
         }
     </script>
     <script src="./renderer.js"></script>
+    <div id="toastContainer" class="toast-container"></div>
 </body>
 
 </html>
