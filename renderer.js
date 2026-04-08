@@ -91,6 +91,22 @@ window.toggleClickTool = () => {
     if (isClickToolActive) showToast("Click Tool Active: Touch map to set position", "msg");
 };
 
+window.toggleRemoteControl = () => {
+    const rc = document.getElementById('urRemoteControl');
+    const btn = document.getElementById('btnToggleRemote');
+    if (!rc) return;
+    
+    const isHidden = window.getComputedStyle(rc).display === 'none';
+    if (isHidden) {
+        rc.style.display = 'flex';
+        if (btn) btn.classList.add('active');
+        showToast("UR Controller Opened", "msg");
+    } else {
+        rc.style.display = 'none';
+        if (btn) btn.classList.remove('active');
+    }
+};
+
 window.centerMapOnRobot = () => {
     mapPanX = 0;
     mapPanY = 0;

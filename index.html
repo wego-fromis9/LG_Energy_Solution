@@ -435,20 +435,27 @@
             /* 클릭 시 살짝 작아짐 */
         }
 
+        /* Wrapper for the dashed line connection */
+        .remote-tree-wrapper {
+            display: none; /* Toggled by JS */
+            flex-direction: column;
+            padding-left: 18px; /* Indent like a tree branch */
+            border-left: 2px dashed #00a5e5;
+            margin-left: 15px;
+            margin-top: 10px;
+            z-index: 40;
+        }
+
         /* ===== Controller Remote Overlay ===== */
         .remote-control {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
             background: rgba(255, 255, 255, 0.95);
             border: 2px solid #00a5e5;
             border-radius: 8px;
             padding: 12px;
-            display: flex;
+            display: flex; /* Always flex inside the wrapper */
             flex-direction: column;
             gap: 10px;
-            z-index: 40;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             width: 160px;
         }
 
@@ -1285,14 +1292,27 @@
                     </div>
 
                     <div class="map-container" style="flex:1; margin:0; position:relative; overflow:hidden;">
-                        <!-- Controller Remote Overlay -->
-                        <div class="remote-control">
-                            <div class="remote-title">Remote Control</div>
-                            <button class="scenario-btn" onclick="cmdScenario(1)">Scenario 1</button>
-                            <button class="scenario-btn" onclick="cmdScenario(2)">Scenario 2</button>
-                            <button class="scenario-btn" onclick="cmdScenario(3)">Scenario 3</button>
-                            <button class="btn-danger" style="margin-top:5px; height:32px; font-size:11px;"
-                                onclick="cmdMirCancel()">CANCEL</button>
+                        
+                        <!-- Dev Tool for Remote Control (Grouped as a tree) -->
+                        <div class="map-tools-vertical">
+                            <!-- [CRITICAL FIX] Added align-items: flex-start to prevent the button from stretching -->
+                            <div style="display: flex; flex-direction: column; align-items: flex-start;">
+                                <button class="tool-btn" id="btnToggleRemote" onclick="toggleRemoteControl()" title="Toggle UR Controller">
+                                    <img src="images/control_icon.png" alt="Control">
+                                </button>
+
+                                <!-- Controller Remote Overlay (Connected with dashed line) -->
+                                <div class="remote-tree-wrapper" id="urRemoteControl">
+                                    <div class="remote-control">
+                                        <div class="remote-title">Remote Control</div>
+                                        <button class="scenario-btn" onclick="cmdScenario(1)">Scenario 1</button>
+                                        <button class="scenario-btn" onclick="cmdScenario(2)">Scenario 2</button>
+                                        <button class="scenario-btn" onclick="cmdScenario(3)">Scenario 3</button>
+                                        <button class="btn-danger" style="margin-top:5px; height:32px; font-size:11px;"
+                                            onclick="cmdMirCancel()">CANCEL</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <canvas id="mapCanvas"></canvas>
