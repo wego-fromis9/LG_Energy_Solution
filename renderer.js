@@ -37,7 +37,71 @@ let isUrUnlock = false;
 let isUrInitial = false;
 let lidarTileIndex = 0;
 
+let isAdjustMode = false;
+let isClickToolActive = false;
+let mapPanX = 0, mapPanY = 0;
+let mapZoom = 1.0; // Added for CSS Zoom
+let isDraggingMap = false, dragStartX, dragStartY;
 
+window.applyMapTransform = () => {
+    ['setupMapCanvas', 'lidarCanvasSetup', 'mapCanvas', 'lidarCanvas'].forEach(cid => {
+        const c = document.getElementById(cid);
+        if (c) {
+            c.style.transformOrigin = 'center';
+            c.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapZoom})`;
+        }
+    });
+    updateMapScaleBar();
+};
+
+window.cmdMapZoomIn = () => { mapZoom *= 1.2; applyMapTransform(); };
+window.cmdMapZoomOut = () => { mapZoom /= 1.2; applyMapTransform(); };
+
+function updateLED(id, status) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = `led ${status}`; // 'ok', 'err', 'warn', or ''
+}
+
+window.toggleAdjustMode = () => {
+    isAdjustMode = !isAdjustMode;
+    const btn = document.getElementById('btnAdjustMode');
+    const tb = document.getElementById('adjustToolbar');
+    if (isAdjustMode) {
+        if (btn) btn.classList.add('active');
+        if (tb) tb.classList.add('show');
+    } else {
+        if (btn) btn.classList.remove('active');
+        if (tb) tb.classList.remove('show');
+        // Reset click tool on exit
+        isClickToolActive = false;
+        const clickBtn = document.getElementById('btnClickTool');
+        if (clickBtn) { clickBtn.style.filter = ''; }
+        showToast("Adjust Mode Saved & Closed", "ok");
+    }
+};
+
+window.toggleClickTool = () => {
+    isClickToolActive = !isClickToolActive;
+    const btn = document.getElementById('btnClickTool');
+    if (btn) {
+        btn.style.filter = isClickToolActive ? 'drop-shadow(0 0 5px #00a5e5)' : '';
+    }
+    if (isClickToolActive) showToast("Click Tool Active: Touch map to set position", "msg");
+};
+
+window.centerMapOnRobot = () => {
+    mapPanX = 0;
+    mapPanY = 0;
+    mapZoom = 1.0;
+    applyMapTransform();
+    if (typeof mirCtrl.drawMap === 'function') mirCtrl.drawMap();
+};
+
+
+// Theme Constants
+const COLOR_SKY_BLUE = "#00a5e5";
+const COLOR_WHITE = "#ffffff";
 
 // Notification System State
 let notifications = [];
@@ -51,7 +115,8 @@ function getMirHeaders() {
     return mirCtrl.getAuthHeader();
 }
 function getMirHost() {
-    return document.getElementById('inputHost').value || "192.168.12.20";
+    // [CRITICAL FIX] The IP is static. Hardcoded to prevent TypeError when UI element is removed.
+    return "192.168.12.20";
 }
 
 // -----------------------------------------------
@@ -66,7 +131,6 @@ window.switchTab = (tab) => {
     document.getElementById('tabBtnMain').classList.toggle('active', tab === 'main');
     document.getElementById('tabBtnLogs').classList.toggle('active', tab === 'logs');
 
-    // [GALAXY BRAIN] Re-parent the shared 3D viewer to the active tab
     if (window.shared3DViewer && window.shared3DViewer.renderer) {
         const targetId = (tab === 'setup') ? 'urdf-viewer-setup' : 'urdf-viewer';
         const container = document.getElementById(targetId);
@@ -75,7 +139,6 @@ window.switchTab = (tab) => {
         }
     }
 
-    // [DOM TIMING FIX] Trigger 3D viewer resize after a short delay to allow DOM reflow
     setTimeout(() => {
         if (window.shared3DViewer && window.shared3DViewer.renderer) {
             const container = window.shared3DViewer.renderer.domElement.parentElement;
@@ -121,7 +184,6 @@ window.closeCustomPrompt = (isOk) => {
 // Utility Loggers
 // -----------------------------------------------
 function logMirSystemData(msg, type = "info") {
-    // REMOVED THE RESTRICTIVE FILTER HERE! All logs (info, ok, warn, err) must pass.
     ['systemLogSetup', 'systemLogMain'].forEach(id => {
         const sysLog = document.getElementById(id);
         if (!sysLog) return;
@@ -137,11 +199,7 @@ function logMirSystemData(msg, type = "info") {
 function appendLogRow(tbodyId, state, module, msg, timestamp) {
     const s = (state || '').toUpperCase();
 
-    // [CRITICAL FIX] Removed addNotification from here to prevent raw ROS logs from flooding the UI.
-    // Notifications are now ONLY triggered by actual Active Errors in pollDetailedLogs.
-
     if (tbodyId === 'mirLogTbody') {
-        // Allow tracking of general status updates and events alongside errors
         if (!s.includes("ERR") && !s.includes("FAIL") && !s.includes("FATAL") && !s.includes("WARN") && !s.includes("INFO") && !s.includes("STATE") && !s.includes("MISSION")) {
             return;
         }
@@ -162,10 +220,10 @@ function appendLogRow(tbodyId, state, module, msg, timestamp) {
         <td class="col-msg">${msg}</td>
         <td class="col-time">${ts}</td>
     `;
+
     tbody.prepend(tr);
     while (tbody.children.length > 100) tbody.removeChild(tbody.lastChild);
 
-    // [CRITICAL FIX] Auto-scroll to top so the newest log is always visible
     const scrollContainer = tbody.closest('.log-scroll-area') || tbody.closest('div');
     if (scrollContainer) {
         scrollContainer.scrollTop = 0;
@@ -187,7 +245,6 @@ function updateNotificationUI() {
     const list = document.getElementById('notificationList');
     if (!badge || !list) return;
 
-    // Badge display logic: Show red dot without numbers when unreadCount > 0
     if (badge) {
         if (unreadCount > 0) {
             badge.innerText = "";
@@ -281,7 +338,6 @@ window.cmdSaveLog = (tbodyId, filename) => {
         fs.writeFileSync(savePath, csv, 'utf8');
         logMirSystemData(`로그 저장 완료: ${savePath}`, 'ok');
 
-        // Success Notification
         addNotification(`Success: Log saved to ${filename}`, 'ok');
     } catch (e) {
         logMirSystemData(`로그 저장 실패: ${e.message}`, 'err');
@@ -306,29 +362,37 @@ function updateTopicStatus(id, isAlive, value) {
 function pollTopicHeartbeats() {
     const hb = urCtrl.lastHeartbeat;
     const now = new Date();
-    // Use 5s for high-frequency topics, 60s for event-driven log topics
     const alive = (ts, timeout = 5000) => ts && (now - ts) < timeout;
 
     updateTopicStatus('topic-log-setup', alive(hb.log, 60000), config.ur.logTopic);
-    // updateTopicStatus('topic-unlock-setup', true, config.ur.unlockTopic); // REMOVE THIS LINE
     updateTopicStatus('topic-estop-setup', true, config.ur.estopTopic);
     updateTopicStatus('topic-joint-setup', alive(hb.joint), config.ur.jointTopic);
     updateTopicStatus('topic-rosout-setup', alive(hb.rosout, 60000), config.ur.rosoutTopic);
     updateTopicStatus('topic-camera-setup', alive(hb.camera), config.ur.cameraTopic);
+
+    // Add LED logic for UR
+    updateLED('led-ur-joint', alive(hb.joint) ? 'ok' : 'err');
+    updateLED('led-ur-cam', alive(hb.camera) ? 'ok' : 'err');
+
+    // [CRITICAL FIX] Integrated UR State LED
+    // Priority: E-Stop (Red) > Lock (Yellow) > Unlock (Green)
+    let urStateColor = 'warn'; // Default Lock state (Yellow)
+    if (isUrEstop) urStateColor = 'err'; // E-Stop engaged (Red)
+    else if (isUrUnlock) urStateColor = 'ok'; // Unlocked (Green)
+
+    updateLED('led-ur-state', urStateColor);
 }
 
 // -----------------------------------------------
 // LiDAR Scan & Robot Position Visualizer
 // -----------------------------------------------
 
-// [NEW] 유저 커스텀 화살표 이미지 로드
 const customArrowImg = new Image();
 customArrowImg.src = 'images/nav_arrow.png';
 
 async function fetchProtectiveScanAPI() {
     if (!currentMapId || !mapImgObj) return;
 
-    // Only fetch if the checkbox in the active tab is actually checked (save bandwidth)
     const isSetup = document.getElementById('tabSetup').classList.contains('active');
     const chkLidar = document.getElementById(isSetup ? 'chkLidarSetup' : 'chkLidar');
     if (!chkLidar || !chkLidar.checked) {
@@ -339,8 +403,6 @@ async function fetchProtectiveScanAPI() {
     try {
         const host = getMirHost();
         const headers = getMirHeaders();
-
-        // Use the round-robin buffer (0-19) discovered by the user with cache-busting
         const url = `http://${host}/robot-images/laser_map/laser_map_${lidarTileIndex}.png?t=${Date.now()}`;
 
         const res = await fetch(url, {
@@ -361,7 +423,6 @@ async function fetchProtectiveScanAPI() {
             };
             img.src = imgUrl;
 
-            // Increment and wrap around the 0-19 buffer for the next poll
             lidarTileIndex = (lidarTileIndex + 1) % 20;
         } else {
             if (typeof drawProtectiveScanOverlay === 'function') drawProtectiveScanOverlay(null);
@@ -380,7 +441,6 @@ function drawProtectiveScanOverlay(img) {
         const chkGrid = document.getElementById(isSetup ? 'chkGridSetup' : 'chkGrid');
         const chkLidar = document.getElementById(isSetup ? 'chkLidarSetup' : 'chkLidar');
 
-        // Always ensure canvas dimensions if possible, but dont return early if mapImgObj is missing
         if (mapImgObj) {
             if (cvs.width !== mapImgObj.width || cvs.height !== mapImgObj.height) {
                 cvs.width = mapImgObj.width;
@@ -395,7 +455,6 @@ function drawProtectiveScanOverlay(img) {
         const ox = globalMapMeta.ox || 0;
         const oy = globalMapMeta.oy || 0;
 
-        // 1. Draw Grid (Independent of Robot/Map loading)
         if (chkGrid && chkGrid.checked) {
             ctx.strokeStyle = "rgba(0, 0, 0, 0.08)";
             ctx.lineWidth = 0.5;
@@ -413,7 +472,6 @@ function drawProtectiveScanOverlay(img) {
             ctx.stroke();
         }
 
-        // 2. Draw Robot & LiDAR Scan (Requiring map context for sizing)
         if (mapImgObj) {
             const rx = (globalRobotPosition.x - ox) / r;
             const ry = mapImgObj.height - ((globalRobotPosition.y - oy) / r);
@@ -423,19 +481,20 @@ function drawProtectiveScanOverlay(img) {
             ctx.translate(rx, ry);
             ctx.rotate(-rad);
 
-            // Draw the fetched LiDAR image ONLY (Independent Rotation)
             if (img && chkLidar && chkLidar.checked) {
-                ctx.save(); // Isolate LiDAR rotation
-                ctx.rotate(Math.PI / 4); // Rotate LiDAR 90 degrees CCW
+                ctx.save();
+                // [CRITICAL FIX] Corrected the 90-degree clockwise offset by rotating -90 degrees (-Math.PI / 2)
+                ctx.rotate(Math.PI - Math.PI / 4);
+
+                // ctx.scale(-1, 1);
 
                 const scanRes = 0.05;
                 const scale = scanRes / r;
                 ctx.drawImage(img, (-img.width / 2) * scale, (-img.height / 2) * scale, img.width * scale, img.height * scale);
 
-                ctx.restore(); // Restore context so the robot arrow remains unaffected
+                ctx.restore();
             }
 
-            // Draw Robot Arrow (Remains completely untouched)
             if (customArrowImg.complete && customArrowImg.naturalHeight !== 0) {
                 const iconSize = 40;
                 ctx.save();
@@ -446,20 +505,12 @@ function drawProtectiveScanOverlay(img) {
                 ctx.fillStyle = '#4285F4';
                 ctx.beginPath(); ctx.arc(0, 0, 12, 0, 2 * Math.PI); ctx.fill();
             }
-            ctx.restore(); // Final restore for the main robot translation/rotation
+            ctx.restore();
         }
     });
 }
 
-window.toggleLidar = (which, visible) => {
-    // [FIX] Toggling LiDAR shouldn't hide the whole canvas, as the Grid is on it.
-    // The draw loop now dynamically checks the checkbox state.
-};
-
-// -----------------------------------------------
-// MiR Diagnostics
-// -----------------------------------------------
-
+window.toggleLidar = (which, visible) => { };
 
 // -----------------------------------------------
 // Map Rendering
@@ -477,7 +528,6 @@ window.cmdRefreshSetupMap = async () => {
         if (!stat.map_id) return logMirSystemData("활성화된 맵이 없습니다.", "warn");
         currentMapId = stat.map_id;
 
-        // LET MIR CONTROLLER FETCH DETAILED POSITIONS (WITH X,Y COORDINATES)
         await mirCtrl.updatePositions(currentMapId);
 
         const mapDataRes = await fetch(`http://${host}/api/v2.0.0/maps/${currentMapId}`, { headers });
@@ -486,7 +536,6 @@ window.cmdRefreshSetupMap = async () => {
 
         mirCtrl.map.currentId = currentMapId;
 
-        // [CRITICAL FIX] Sync metadata to BOTH renderer and the drawing controller
         globalMapMeta.r = mapData.resolution || 0.05;
         globalMapMeta.ox = mapData.origin_x || 0;
         globalMapMeta.oy = mapData.origin_y || 0;
@@ -506,7 +555,7 @@ window.cmdRefreshSetupMap = async () => {
                 globalMapMeta.h = img.height;
 
                 mirCtrl.map.baseImage = img;
-                mirCtrl.drawMap(); // Will now calculate px/py perfectly
+                mirCtrl.drawMap();
                 logMirSystemData(`맵 렌더링 완료`, "ok");
             };
         }
@@ -525,10 +574,9 @@ window.cmdRefreshSetupMap = async () => {
 // -----------------------------------------------
 function updateMapScaleBar() {
     const res = globalMapMeta.r || 0.05;
-    // We want a bar representing 1 meter
-    const pixelsPerMeter = 1.0 / res;
+    // Apply CSS mapZoom to physical scale ratio
+    const pixelsPerMeter = (1.0 / res) * (typeof mapZoom !== 'undefined' ? mapZoom : 1.0);
 
-    // Choose a reasonable length (e.g., if 1m is too short, show 2m)
     let displayMeters = 1;
     let barWidth = pixelsPerMeter;
 
@@ -552,7 +600,7 @@ function updateMapScaleBar() {
 }
 
 // -----------------------------------------------
-// MiR Status Polling (main loop) - 실시간 전용
+// MiR Status Polling (main loop)
 // -----------------------------------------------
 let lastFetchedErrorId = -1;
 let lastFetchedMissionId = -1;
@@ -564,7 +612,6 @@ window.pollDetailedLogs = () => {
     const host = getMirHost();
     const headers = getMirHeaders();
 
-    // 1. Status Polling (Independent)
     (async () => {
         try {
             const statRes = await fetch(`http://${host}/api/v2.0.0/status`, { headers });
@@ -582,20 +629,22 @@ window.pollDetailedLogs = () => {
                     logMirSystemData(`상태 변경: ${stat.state_text} (${stat.mission_text || 'Idle'})`, 'info');
                 }
 
-                // [CRITICAL FIX] Active Errors from /status are pushed to Notifications and Mini-Logs
                 const activeErrors = stat.errors || [];
+
+                // Add LED logic for MiR
+                updateLED('led-mir-state', stat.state_id === 3 ? 'ok' : (stat.state_id === 4 ? 'warn' : 'err'));
+                updateLED('led-mir-err', activeErrors.length > 0 ? 'err' : 'ok');
+
                 activeErrors.forEach(err => {
                     const code = err.code || 0;
                     if (!activeErrorCodes.has(code)) {
                         activeErrorCodes.add(code);
                         const msg = `[에러 ${code}] ${err.module}: ${err.description}`;
                         logMirSystemData(msg, 'err');
-                        // [BUG FIX] Corrected signature from ('MiR Error', msg, 'error') to (msg, 'err')
                         addNotification(msg, 'err');
                     }
                 });
 
-                // Clear old errors
                 const currentErrorCodes = new Set(activeErrors.map(e => e.code));
                 activeErrorCodes.forEach(code => {
                     if (!currentErrorCodes.has(code)) activeErrorCodes.delete(code);
@@ -604,20 +653,21 @@ window.pollDetailedLogs = () => {
         } catch (e) { }
     })();
 
-    // 3. Mission Queue Polling (Independent)
     (async () => {
         try {
             const missRes = await fetch(`http://${host}/api/v2.0.0/mission_queue`, { headers });
             if (missRes.ok) {
                 const missions = await missRes.json();
                 if (Array.isArray(missions)) {
-                    // Filter for active states
                     const activeQueueSummary = missions.filter(m => {
                         const st = (m.state || '').toUpperCase();
                         return st === 'PENDING' || st === 'EXECUTING' || st === 'STARTING';
                     });
 
-                    // [CRITICAL FIX] Fetch details for active missions because summary lacks mission_id
+                    // Add LED logic for Mission
+                    updateLED('led-mir-miss', activeQueueSummary.length > 0 ? 'ok' : '');
+
+
                     const detailedActiveQueue = [];
                     for (const m of activeQueueSummary) {
                         try {
@@ -625,10 +675,9 @@ window.pollDetailedLogs = () => {
                             if (dRes.ok) {
                                 detailedActiveQueue.push(await dRes.json());
                             }
-                        } catch (err) { /* ignore single drop */ }
+                        } catch (err) { }
                     }
 
-                    // Update Queue State Text UI
                     const elState = document.getElementById('mirMissionQueueState');
                     if (elState) {
                         if (activeQueueSummary.length === 0) {
@@ -650,7 +699,6 @@ window.pollDetailedLogs = () => {
                         }
                     }
 
-                    // ... (Keep the existing log appending logic for new missions exactly as it is) ...
                     if (missions.length > 0) {
                         if (lastFetchedMissionId === -1) {
                             lastFetchedMissionId = Math.max(...missions.map(m => m.id || 0));
@@ -677,7 +725,6 @@ window.pollDetailedLogs = () => {
                         }
                     }
 
-                    // Sync UI using the detailed array containing the mission_ids
                     if (typeof window.syncMissionQueueUI === 'function') {
                         window.syncMissionQueueUI(detailedActiveQueue);
                     }
@@ -692,7 +739,6 @@ window.syncMissionQueueUI = function (activeQueue) {
     const box = document.getElementById('mirMissionListSetup');
     if (!box) return;
 
-    // Safely extract GUIDs from the REAL API QUEUE ONLY
     const activeMissionGuids = new Set(activeQueue.map(m => {
         const parts = String(m.mission_id || m.mission || '').split('/');
         return parts[parts.length - 1];
@@ -704,7 +750,6 @@ window.syncMissionQueueUI = function (activeQueue) {
         if (!chk) return;
         const guid = chk.value;
 
-        // CRITICAL: Trust the API 100%. No local storage checks.
         if (activeMissionGuids.has(guid)) {
             row.classList.add('in-queue-mission');
             chk.disabled = true;
@@ -813,7 +858,6 @@ function updateMirPositionsList() {
         item.className = 'waypoint-item';
         item.dataset.guid = p.guid;
         item.innerHTML = `<span>${p.icon} ${p.name || 'Unnamed'}</span><span style="font-size:9px; color:#555;">${p.label}</span>`;
-        // Removed onclick logic to make it Read-Only legend as per corrected requirement
         elList.appendChild(item);
     });
 }
@@ -938,7 +982,6 @@ window.cmdAddMissionToQueue = async () => {
 
         checkedSetupMissions = [];
 
-        // Force rapid polling to catch the API update quickly
         window.pollDetailedLogs();
         setTimeout(() => { window.pollDetailedLogs(); }, 1000);
         setTimeout(() => { window.pollDetailedLogs(); }, 2000);
@@ -957,24 +1000,29 @@ window.cmdClearMissionQueue = async () => {
     }
 };
 
+// -----------------------------------------------
+// UR Control Buttons (Toggle / Fire & Forget)
+// -----------------------------------------------
+
 window.cmdUrManualMode = () => {
+    // Kept for logical consistency, though removed from HTML
     isUrManualMode = !isUrManualMode;
     const el = document.getElementById('topic-states-main');
     if (el) {
         el.textContent = isUrManualMode ? "MANUAL" : "AUTO";
-        el.style.color = isUrManualMode ? "orange" : "#4ade80";
+        el.style.color = isUrManualMode ? COLOR_SKY_BLUE : "#4ade80";
     }
-    urCtrl.publishManualMode(isUrManualMode);
+    if (typeof urCtrl.publishManualMode === 'function') urCtrl.publishManualMode(isUrManualMode);
+};
+
+window.cmdUrLock = () => {
+    if (typeof urCtrl.publishUnlock === 'function') urCtrl.publishUnlock(false);
+    showToast("Command Sent: UR LOCK", "msg");
 };
 
 window.cmdUrUnlock = () => {
-    isUrUnlock = !isUrUnlock;
-    const el = document.getElementById('topic-unlock-setup');
-    if (el) {
-        el.textContent = isUrUnlock ? "UNLOCKED" : "LOCKED";
-        el.style.color = isUrUnlock ? "#4ade80" : "#aaa";
-    }
-    urCtrl.publishUnlock(isUrUnlock);
+    if (typeof urCtrl.publishUnlock === 'function') urCtrl.publishUnlock(true);
+    showToast("Command Sent: UR UNLOCK", "msg");
 };
 
 window.cmdUrEstop = () => {
@@ -983,44 +1031,56 @@ window.cmdUrEstop = () => {
         const el = document.getElementById(id);
         if (el) {
             el.textContent = isUrEstop ? "ENGAGED" : "OK";
-            el.style.color = isUrEstop ? "#ff4d4d" : "#4ade80";
+            el.style.color = isUrEstop ? COLOR_SKY_BLUE : "#aaa";
         }
     });
-    urCtrl.publishEstop(isUrEstop);
+
+    const btns = document.querySelectorAll('button[onclick="cmdUrEstop()"]');
+    btns.forEach(btn => {
+        btn.style.backgroundColor = isUrEstop ? COLOR_SKY_BLUE : COLOR_WHITE;
+        btn.style.color = isUrEstop ? COLOR_WHITE : COLOR_SKY_BLUE;
+    });
+
+    // Fire exactly once on click
+    if (typeof urCtrl.publishEstop === 'function') urCtrl.publishEstop(isUrEstop);
 };
 
 window.cmdSetInitialPosition = () => {
-    isUrInitial = !isUrInitial;
-    const btns = document.querySelectorAll('button[onclick="cmdSetInitialPosition()"]');
-    btns.forEach(btn => {
-        btn.style.backgroundColor = isUrInitial ? "#4ade80" : "";
-        btn.style.color = isUrInitial ? "#fff" : "";
-        btn.style.borderColor = isUrInitial ? "#4ade80" : "";
-    });
-    urCtrl.publishInitialPose(isUrInitial);
+    if (typeof urCtrl.publishInitialPose === 'function') urCtrl.publishInitialPose(true);
+    showToast("Command Sent: INITIAL POSITION", "msg");
 };
 
-window.cmdAdjustRobotPosition = async () => {
-    const curPos = globalRobotPosition || { x: 0, y: 0, orientation: 0 };
-    let defX = mirCtrl.targetX !== undefined ? mirCtrl.targetX : curPos.x;
-    let defY = mirCtrl.targetY !== undefined ? mirCtrl.targetY : curPos.y;
-    let defTheta = curPos.orientation;
-    const result = await window.openCustomPrompt(defX, defY, defTheta);
-    mirCtrl.targetX = undefined; mirCtrl.targetY = undefined;
-    if (!result) return;
+// Direct Adjust Helper (Bypasses the prompt modal)
+window.executeMirPositionAdjust = async (x, y, theta) => {
+    showToast("Adjusting position...", "msg");
     try {
         const host = getMirHost();
         const headers = getMirHeaders();
+        // Pause robot and clear errors
         await fetch(`http://${host}/api/v2.0.0/status`, { method: 'PUT', headers, body: JSON.stringify({ state_id: 4, clear_error: true }) });
         await new Promise(r => setTimeout(r, 500));
-        const resPos = await fetch(`http://${host}/api/v2.0.0/status`, { method: 'PUT', headers, body: JSON.stringify({ position: { x: Number(result.x), y: Number(result.y), orientation: Number(result.theta) } }) });
+        // Send new position
+        const resPos = await fetch(`http://${host}/api/v2.0.0/status`, { method: 'PUT', headers, body: JSON.stringify({ position: { x: Number(x), y: Number(y), orientation: Number(theta) } }) });
         if (resPos.ok) {
             await new Promise(r => setTimeout(r, 500));
+            // Resume robot
             await fetch(`http://${host}/api/v2.0.0/status`, { method: 'PUT', headers, body: JSON.stringify({ state_id: 3 }) });
             logMirSystemData("위치 보정 완료.", "ok");
+            showToast("Position Adjusted Successfully", "ok");
         }
-    } catch (e) { }
+    } catch (e) {
+        logMirSystemData("위치 보정 실패.", "err");
+    }
 };
+
+// Auto Adjust: Localize at the current estimated position immediately
+window.cmdAutoAdjust = () => {
+    const curPos = globalRobotPosition || { x: 0, y: 0, orientation: 0 };
+    executeMirPositionAdjust(curPos.x, curPos.y, curPos.orientation);
+};
+
+// Map old HTML button call to new functionality
+window.cmdAdjustRobotPosition = window.cmdAutoAdjust;
 
 window.cmdCaptureImage = () => {
     const img = document.getElementById('camera-stream');
@@ -1035,30 +1095,22 @@ window.cmdCaptureImage = () => {
         fs.writeFileSync(savePath, buffer);
         logUr(`[OK] 이미지 저장 완료: ${savePath}`);
 
-        // Success Notification
         addNotification(`Success: Image captured to Pictures folder`, 'ok');
     } catch (e) { }
 };
 
 let globalTargetJoints = {};
 
-/**
- * [GALAXY BRAIN] Refactored 3D Viewer - Single Canvas Re-parenting Strategy
- * This approach uses exactly ONE WebGL context and moves it between containers.
- */
 function initROS3DViewer() {
-    // 1. Bulletproof Joint Subscriber (Handles both Arrays [ROS] and Objects [Parsed])
     urCtrl.startJointSubscriber((msg) => {
         if (!msg) return;
         const newJoints = {};
 
         if (msg.name && msg.position) {
-            // Format A: Raw ROS 2 Message Arrays
             for (let i = 0; i < msg.name.length; i++) {
                 newJoints[msg.name[i]] = msg.position[i];
             }
         } else if (typeof msg === 'object') {
-            // Format B: Pre-parsed Dictionary
             for (const key in msg) {
                 newJoints[key] = msg[key];
             }
@@ -1069,7 +1121,6 @@ function initROS3DViewer() {
         }
     });
 
-    // 2. Calibration Configuration
     const modelBaseConfig = {
         heading: 0,
         rosToWebGLRotation: -Math.PI / 2
@@ -1084,7 +1135,6 @@ function initROS3DViewer() {
         'wrist_3_joint': { multiplier: 1, offset: 0 }
     };
 
-    // 3. Initialize Shared THREE.js Scene
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#ebebeb');
     scene.add(new THREE.AxesHelper(1));
@@ -1097,7 +1147,6 @@ function initROS3DViewer() {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     window.shared3DViewer = { renderer, camera, scene, robot: null };
 
-    // Initially attach to the currently active tab
     const isSetupActive = document.getElementById('tabSetup').classList.contains('active');
     const targetId = isSetupActive ? 'urdf-viewer-setup' : 'urdf-viewer';
     const initialContainer = document.getElementById(targetId);
@@ -1118,7 +1167,6 @@ function initROS3DViewer() {
     rosWrapper.rotation.x = modelBaseConfig.rosToWebGLRotation;
     scene.add(rosWrapper);
 
-    // 4. Load URDF (Once)
     const loader = new URDFLoader(new THREE.LoadingManager());
     loader.packages = { 'ur_description': `file://${__dirname}/src/Universal_Robots_ROS2_Description` };
 
@@ -1127,36 +1175,22 @@ function initROS3DViewer() {
         window.shared3DViewer.robot = robot;
         robot.rotation.z = modelBaseConfig.heading;
         logUr(`[WebGL] Shared URDF model loaded.`);
-
-        // Diagnostic: Log URDF joints to console
-        console.log("--- URDF Model Joints ---", Object.keys(robot.joints));
     });
-
-    // 5. Bulletproof Render Loop
-    let hasLoggedMismatch = false;
 
     const renderLoop = function () {
         urdfReqId = requestAnimationFrame(renderLoop);
         const robot = window.shared3DViewer.robot;
 
         if (robot && Object.keys(globalTargetJoints).length > 0) {
-            // One-time Diagnostic: Check name mismatch
-            if (!hasLoggedMismatch) {
-                console.log("--- ROS Joint Topic Keys ---", Object.keys(globalTargetJoints));
-                hasLoggedMismatch = true;
-            }
-
             for (const jName in globalTargetJoints) {
                 const targetPosition = globalTargetJoints[jName];
                 if (typeof targetPosition === 'number' && !isNaN(targetPosition)) {
                     const cal = jointCalibration[jName] || { multiplier: 1, offset: 0 };
                     const finalAngle = (targetPosition * cal.multiplier) + cal.offset;
 
-                    // Priority 1: Official setJointValue API
                     if (typeof robot.setJointValue === 'function') {
                         robot.setJointValue(jName, finalAngle);
                     }
-                    // Priority 2: Direct joint access
                     else if (robot.joints && robot.joints[jName]) {
                         robot.joints[jName].jointValue = finalAngle;
                     }
@@ -1166,13 +1200,11 @@ function initROS3DViewer() {
 
         controls.update();
 
-        // [AUTO-RESIZE] Check for parent container visibility and reported size
         const container = renderer.domElement.parentElement;
         if (container && container.clientWidth > 0 && container.clientHeight > 0) {
             const width = container.clientWidth;
             const height = container.clientHeight;
 
-            // Trigger three.js resize only if size actually mismatch
             if (renderer.domElement.width !== width || renderer.domElement.height !== height) {
                 renderer.setSize(width, height, false);
                 camera.aspect = width / height;
@@ -1214,8 +1246,6 @@ function startUrEstopMonitor() {
         if (match) {
             const isEstopFromTopic = match[1].toLowerCase() === 'true';
 
-            // [FIX] If the user has manually engaged the E-Stop (isUrEstop is true),
-            // ignore the background node's "false" spam.
             if (isUrEstop && !isEstopFromTopic) return;
 
             const el = document.getElementById('topic-estop-main');
@@ -1236,7 +1266,6 @@ function wireMapCheckboxes() {
                 mirCtrl[field] = checked;
                 if (typeof mirCtrl.drawMap === 'function') mirCtrl.drawMap();
 
-                // Sync with peer checkbox
                 if (peerId) {
                     const peer = document.getElementById(peerId);
                     if (peer) peer.checked = checked;
@@ -1245,7 +1274,6 @@ function wireMapCheckboxes() {
         }
     };
 
-    // Synchronized pairs
     wire('chkWaypoint', 'showWaypoints', 'chkWaypointSetup');
     wire('chkWaypointSetup', 'showWaypoints', 'chkWaypoint');
     wire('chkCharge', 'showChargers', 'chkChargeSetup');
@@ -1258,14 +1286,42 @@ function wireMapCheckboxes() {
     const interaction = (id) => {
         const cvs = document.getElementById(id);
         if (!cvs) return;
+
+        cvs.onmousedown = (e) => {
+            isDraggingMap = true;
+            dragStartX = e.clientX - mapPanX;
+            dragStartY = e.clientY - mapPanY;
+        };
+        cvs.onmousemove = (e) => {
+            if (!isDraggingMap) return;
+            mapPanX = e.clientX - dragStartX;
+            mapPanY = e.clientY - dragStartY;
+            window.applyMapTransform();
+        };
+        cvs.onmouseup = () => { isDraggingMap = false; };
+        cvs.onmouseleave = () => { isDraggingMap = false; };
+
+        // Map Click to Adjust
         cvs.onclick = (e) => {
             if (!mapImgObj) return;
+
+            // [CRITICAL FIX] Made case-insensitive. 'setupMapCanvas' does not contain uppercase 'Setup'
+            const isSetup = id.toLowerCase().includes('setup');
+            if (isSetup && (!isAdjustMode || !isClickToolActive)) return;
+
             const rect = cvs.getBoundingClientRect();
             const x = (e.clientX - rect.left) * (cvs.width / rect.width);
             const y = (e.clientY - rect.top) * (cvs.height / rect.height);
             const r = globalMapMeta.r || 0.05, ox = globalMapMeta.ox || 0, oy = globalMapMeta.oy || 0;
-            mirCtrl.targetX = x * r + ox; mirCtrl.targetY = (cvs.height - y) * r + oy;
-            window.cmdAdjustRobotPosition();
+
+            const targetX = x * r + ox;
+            const targetY = (cvs.height - y) * r + oy;
+            const currentTheta = globalRobotPosition ? globalRobotPosition.orientation : 0;
+
+            if (isSetup) {
+                executeMirPositionAdjust(targetX, targetY, currentTheta);
+                toggleClickTool(); // Auto-disable the tool after one use
+            }
         };
     };
     interaction('mapCanvas'); interaction('setupMapCanvas');
@@ -1286,19 +1342,16 @@ function connectMirWebSocket() {
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            // [CRITICAL FIX] Removed strict op/topic checks. Mimicking Python's "if 'msg' in data:"
             if (data.msg && data.msg.level !== undefined) {
                 const log = data.msg;
-                
-                // ROS levels: 1:DEBUG, 2:INFO, 4:WARN, 8:ERROR, 16:FATAL
+
                 let level = "INFO";
                 if (log.level === 4) level = "WARN";
                 else if (log.level >= 8) level = "ERROR";
-                else if (log.level === 1) return; // Skip noisy DEBUG logs
+                else if (log.level === 1) return;
 
                 const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-                
-                // Ensure appendLogRow exists and works
+
                 if (typeof appendLogRow === 'function') {
                     appendLogRow('mirLogTbody', level, log.name || 'System', log.msg || '', ts);
                 }
@@ -1325,7 +1378,6 @@ window.onload = () => {
         set('mirStateText', state.text || "—");
         set('mirBattery', `${(state.battery || 0).toFixed(1)}%`);
 
-        // RESTORED UI BINDINGS
         set('mirRobotNameSetup', state.robot_name || "Unknown");
         set('mirSerialSetup', state.serial_number || "Unknown");
 
@@ -1339,7 +1391,6 @@ window.onload = () => {
         set('mirMoved', state.moved_distance ? `${state.moved_distance.toFixed(2)} m` : "—");
         set('mirErrorCount', state.errors ? state.errors.length : 0);
 
-        // ALWAYS sync global position for the map overlay
         globalRobotPosition.x = state.x;
         globalRobotPosition.y = state.y;
         globalRobotPosition.orientation = state.theta;
@@ -1347,15 +1398,13 @@ window.onload = () => {
         if (extra && extra.positionsLoaded) { updateWaypointCheckboxes(); updateMirPositionsList(); }
     }, document.getElementById('setupMapCanvas'));
 
-    // [HEARTBEAT & LOG FIX] High-timeout for sporadically publishing logs
     urCtrl.startLogSubscriber((msg) => {
-        if (urCtrl.lastHeartbeat) urCtrl.lastHeartbeat.log = new Date(); // Fixes "Waiting" in Setup tab
+        if (urCtrl.lastHeartbeat) urCtrl.lastHeartbeat.log = new Date();
         const text = msg.msg || (typeof msg === 'string' ? msg : JSON.stringify(msg));
         const level = (text.toLowerCase().includes("error") || msg.level >= 40) ? "ERROR" : "INFO";
         const nodeName = msg.name || 'UR_Node';
         appendLogRow('urLogTbody', level, nodeName, text);
 
-        // Update Main Dashboard Error Indicator
         updateDashboardErrorState(level === "ERROR");
     });
 
@@ -1369,7 +1418,6 @@ window.onload = () => {
     urCtrl.startCameraSubscriber((b64) => {
         if (imgStream) {
             imgStream.src = "data:image/jpeg;base64," + b64;
-            // [FORCED VISIBILITY] Ensure image tag is shown once data arrives
             imgStream.style.display = 'block';
         }
     });
