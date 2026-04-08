@@ -693,7 +693,14 @@
 
         .waypoint-item input[type="checkbox"] {
             margin-right: 10px;
-            accent-color: #00a5e5;
+            accent-color: #0099d8;
+            /* Darkened slightly to force a white checkmark */
+            cursor: pointer;
+        }
+
+        /* [NEW] Apply the same unified color to the map layer checkboxes */
+        .overlay-layers input[type="checkbox"] {
+            accent-color: #0099d8;
             cursor: pointer;
         }
 
@@ -1053,6 +1060,9 @@
                                 <div class="led" id="led-mir-state"></div>State
                             </div>
                             <div class="status-item">
+                                <div class="led" id="led-mir-play"></div>Play
+                            </div>
+                            <div class="status-item">
                                 <div class="led" id="led-mir-miss"></div>Mission
                             </div>
                         </div>
@@ -1072,6 +1082,7 @@
                     </div>
                     <div class="flex-row">
                         <button class="btn-mir" style="flex: 1;" onclick="cmdAddMissionToQueue()">Add</button>
+                        <button class="btn-mir" style="flex: 1;" onclick="cmdMirPlayPause()">Play/Pause</button>
                         <button class="btn-danger" style="flex: 1;" onclick="cmdClearMissionQueue()">Clear</button>
                     </div>
                 </div>

@@ -633,6 +633,10 @@ window.pollDetailedLogs = () => {
 
                 // Add LED logic for MiR
                 updateLED('led-mir-state', stat.state_id === 3 ? 'ok' : (stat.state_id === 4 ? 'warn' : 'err'));
+                
+                // [NEW] Explicit Play/Pause LED: Green if State 3 (Play/Ready), Yellow if State 4 (Pause)
+                updateLED('led-mir-play', stat.state_id === 3 ? 'ok' : 'warn');
+                
                 updateLED('led-mir-err', activeErrors.length > 0 ? 'err' : 'ok');
 
                 activeErrors.forEach(err => {
@@ -813,7 +817,8 @@ window.fetchAndRenderUserMissions = async () => {
             const chk = document.createElement('input');
             chk.type = 'checkbox';
             chk.value = m.guid;
-            chk.style.cssText = 'margin-right:10px;accent-color:#00a5e5;';
+            // [CRITICAL FIX] Darkened accent-color to force a white checkmark
+            chk.style.cssText = 'margin-right:10px;accent-color:#0099d8;';
             chk.onchange = (e) => {
                 if (e.target.checked) checkedSetupMissions.push(m.guid);
                 else checkedSetupMissions = checkedSetupMissions.filter(g => g !== m.guid);
