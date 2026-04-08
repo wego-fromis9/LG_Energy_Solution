@@ -361,6 +361,12 @@
             border-radius: 6px;
         }
 
+        /* [CRITICAL FIX] 3D Viewer Container Overflow Fix */
+        .panel[data-type="ur"] {
+            min-height: 0;
+            overflow: hidden;
+        }
+
         .panel[data-type="mir"],
         .panel[data-type="center"],
         .panel[data-type="ur"],
@@ -382,11 +388,11 @@
 
         /* Scaled Icons (~1.25x) */
         .header-icon {
-            height: 30px;
+            height: 38px;
             width: auto;
-            margin-right: 10px;
+            margin-right: 12px;
             vertical-align: middle;
-            border-radius: 3px;
+            border-radius: 4px;
         }
 
         .notification-bell img {
@@ -411,8 +417,8 @@
         }
 
         .icon-action-btn img {
-            height: 26px;
-            width: 26px;
+            height: 32px;
+            width: 32px;
             object-fit: contain;
             opacity: 0.5;
             /* 기본 상태: 반투명 연하게 */
@@ -427,6 +433,34 @@
         .icon-action-btn:active {
             transform: scale(0.9);
             /* 클릭 시 살짝 작아짐 */
+        }
+
+        /* ===== Controller Remote Overlay ===== */
+        .remote-control {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid #00a5e5;
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 40;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            width: 160px;
+        }
+
+        .remote-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #00a5e5;
+            text-align: center;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
         }
 
         /* ===== Map Zoom Tools ===== */
@@ -1115,6 +1149,10 @@
                 <div class="panel" data-type="center" style="flex: 1; display:flex; flex-direction:column;">
                     <div class="panel-header">
                         <div><img src="images/slam_icon.png" class="header-icon"> MiR Map Setup</div>
+                        <!-- Moved refresh button here for consistency with Main Tab -->
+                        <button class="icon-action-btn" onclick="cmdRefreshSetupMap()" title="Refresh Map">
+                            <img src="images/refresh_icon.png" alt="Refresh">
+                        </button>
                     </div>
 
                     <div class="map-container" style="flex: 1; margin:0; position:relative; overflow:hidden;">
@@ -1147,11 +1185,6 @@
                             <!-- 2. 중앙 정렬 버튼 -->
                             <button class="tool-btn" onclick="centerMapOnRobot()" title="Center to Robot">
                                 <img src="images/target_icon.png">
-                            </button>
-
-                            <!-- 3. 새로고침 버튼 -->
-                            <button class="tool-btn" onclick="cmdRefreshSetupMap()" title="Refresh Map">
-                                <img src="images/refresh_icon.png">
                             </button>
                         </div>
 
@@ -1194,86 +1227,77 @@
 
     <!-- ==================== MAIN DASHBOARD TAB ==================== -->
     <div class="tab-content" id="tabMain">
-        <div class="grid-main">
+        <div class="grid-setup"> <!-- Reusing grid-setup for 1:3 ratio -->
 
-            <!-- Left Column: MiR -->
+            <!-- Left Column (Ratio 1): Waypoints : Camera : 3D -->
             <div class="grid-col">
-                <div class="panel" data-type="mir">
-                    <div class="panel-header" style="padding-bottom: 5px;">
-                        <div><img src="images/mir_icon.jpeg" style="height: 32px; border-radius: 4px;"></div>
-                    </div>
-                    <table class="telem-table">
-                        <tbody>
-                            <tr>
-                                <td>State</td>
-                                <td id="mirStateText" style="color:#aaa;">Waiting</td>
-                            </tr>
-                            <tr>
-                                <td>Errors</td>
-                                <td id="mirErrorCount" style="color:#aaa;">Waiting</td>
-                            </tr>
-                            <tr>
-                                <td>Battery Level</td>
-                                <td id="mirBattery" style="color:#aaa;">Waiting</td>
-                            </tr>
-                            <tr>
-                                <td>Battery Time Left</td>
-                                <td id="mirBatteryTime" style="color:#aaa;">Waiting</td>
-                            </tr>
-                            <tr>
-                                <td>Uptime</td>
-                                <td id="mirUptime" style="color:#aaa;">Waiting</td>
-                            </tr>
-                            <tr>
-                                <td>Distance Moved</td>
-                                <td id="mirMoved" style="color:#aaa;">Waiting</td>
-                            </tr>
-                            <tr>
-                                <td>Mission Queue State:</td>
-                                <td id="mirMissionQueueState" style="color:#aaa;">Waiting</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="panel" data-type="mir"
-                    style="flex: 0 0 200px; min-height: 200px; max-height: 200px; display:flex; flex-direction:column; overflow: hidden;">
+                <!-- Waypoint Panel (Status container removed to save space) -->
+                <div class="panel" data-type="mir" style="flex: 1; display:flex; flex-direction:column; min-height:0;">
                     <div class="panel-header">
-                        <div><img src="images/error_icon.png" class="header-icon"> System Logs</div>
-                    </div>
-                    <div class="mini-log" id="systemLogMain"></div>
-                </div>
-
-                <!-- MiR Positions List -->
-                <div class="panel" data-type="mir" style="flex:1; display:flex; flex-direction:column;">
-                    <div class="panel-header">
-                        <div><img src="images/waypoint_icon.png" class="header-icon"> waypoint</div>
-                        <button class="icon-action-btn" onclick="cmdRefreshSetupMap()" title="Refresh Waypoints">
+                        <div><img src="images/waypoint_icon.png" class="header-icon"> WAYPOINT STATUS</div>
+                        <button class="icon-action-btn" onclick="cmdRefreshSetupMap()" title="Refresh">
                             <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
                     </div>
-                    <div class="list-box" id="mirPositionsList"
-                        style="flex:1; margin-bottom:0; font-family: 'Roboto Mono', monospace; font-size:12px;"></div>
+                    <!-- Scrollable Waypoint List -->
+                    <div class="list-box" id="mirPositionsListMain"
+                        style="flex:1; margin-bottom:0; font-family: 'Roboto Mono', monospace; font-size:12px; overflow-y:auto; min-height:0;">
+                    </div>
+                </div>
+
+                <div class="panel" data-type="ur" style="flex: 1.5; display:flex; flex-direction:column;">
+                    <div id="camera-feed"
+                        style="flex:1; position:relative; display:flex; align-items:center; justify-content:center; background:#000; overflow:hidden; border-radius:4px;">
+                        <img id="camera-stream-main" src="" style="width:100%; height:100%; object-fit:contain;"
+                            onerror="this.style.display='none'" />
+                        <!-- 순수 누끼 이미지 캡처 버튼 오버레이 -->
+                        <button class="icon-action-btn" onclick="cmdCaptureImage()" title="Capture"
+                            style="position:absolute; bottom:10px; right:10px; z-index:10;">
+                            <img src="images/screenshot_icon.png" alt="Capture">
+                        </button>
+                    </div>
+                </div>
+
+                <div class="panel" data-type="ur" style="flex: 2.5; display:flex; flex-direction:column; min-height:0;">
+                    <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>3D VIEWER</div>
+                        <button class="icon-action-btn" onclick="cmdRefresh3DViewer()" title="Refresh">
+                            <img src="images/refresh_icon.png" alt="Refresh">
+                        </button>
+                    </div>
+                    <div id="urdf-viewer-main" style="flex:1; min-height:150px; background:#ebebeb; border-radius:4px;">
+                    </div>
+                    <div class="flex-row" style="margin-top:10px;">
+                        <button class="btn-ur-action" style="flex:1;" onclick="cmdUrEstop()">E-Stop</button>
+                        <button class="btn-ur-action" style="flex:1;" onclick="cmdUrFreedrive()">Freedrive</button>
+                    </div>
                 </div>
             </div>
 
-            <!-- Center Column: Map -->
+            <!-- Right Column (Ratio 3): Large Map -->
             <div class="grid-col">
                 <div class="panel" data-type="center" style="flex: 1; display:flex; flex-direction:column;">
                     <div class="panel-header">
-                        <div><img src="images/slam_icon.png" class="header-icon"> Map</div>
+                        <div><img src="images/slam_icon.png" class="header-icon"> NAVIGATION MAP</div>
                         <button class="icon-action-btn" onclick="cmdRefreshSetupMap()" title="Refresh Map">
                             <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
                     </div>
 
-                    <div class="map-container" id="mapWrapper" style="position:relative;">
-                        <div id="debugOverlay"
-                            style="position:absolute; top:2px; left:2px; background:rgba(0,0,0,0.8); color:#0f0; padding:6px; font-family:monospace; font-size:10px; z-index:20; border-radius:4px; pointer-events:none; white-space:pre; min-width:200px; display:none;">
+                    <div class="map-container" style="flex:1; margin:0; position:relative; overflow:hidden;">
+                        <!-- Controller Remote Overlay -->
+                        <div class="remote-control">
+                            <div class="remote-title">Remote Control</div>
+                            <button class="scenario-btn" onclick="cmdScenario(1)">Scenario 1</button>
+                            <button class="scenario-btn" onclick="cmdScenario(2)">Scenario 2</button>
+                            <button class="scenario-btn" onclick="cmdScenario(3)">Scenario 3</button>
+                            <button class="btn-danger" style="margin-top:5px; height:32px; font-size:11px;"
+                                onclick="cmdMirCancel()">CANCEL</button>
                         </div>
+
                         <canvas id="mapCanvas"></canvas>
-                        <!-- LiDAR Overlay Canvas -->
                         <canvas id="lidarCanvas" class="lidar-canvas" style="display:block;"></canvas>
+
                         <!-- Zoom Tools -->
                         <div class="map-zoom-tools">
                             <button class="tool-btn" onclick="cmdMapZoomIn()" title="Zoom In">
@@ -1283,6 +1307,7 @@
                                 <img src="images/zoom-out_icon.png">
                             </button>
                         </div>
+
                         <div class="overlay-layers">
                             <label><input type="checkbox" id="chkWaypoint" checked> <img src="images/position_icon.png"
                                     style="height:20px;"> Waypoint</label>
@@ -1294,74 +1319,11 @@
                             <label><input type="checkbox" id="chkGrid"><img src="images/grid_icon.png"
                                     style="height:20px;"> Grid</label>
                         </div>
+
                         <div class="map-scale-bar" id="scaleBarMain">
                             <div class="scale-bar-line" id="scaleLineMain" style="width: 20px;"></div>
                             <div class="scale-bar-label" id="scaleLabelMain">1m</div>
                         </div>
-                    </div>
-
-                    <div class="flex-row" style="margin-top:10px; gap:8px;">
-                        <button class="btn-mir" style="flex:1;" onclick="cmdMirPlayPause()">Play/Pause</button>
-                        <button class="btn-mir" style="flex:1;" onclick="cmdMirDock()">Dock</button>
-                        <button class="btn-danger" style="flex:1;" onclick="cmdMirCancel()">Cancel</button>
-                        <button class="btn-danger" style="flex:1;" onclick="cmdMirClearErr()">Clear Error</button>
-                    </div>
-                </div>
-
-                <div class="panel" data-type="center">
-                    <div class="panel-header">
-                        <div><img src="images/scenario_icon.png" class="header-icon"> SCENARIO</div>
-                    </div>
-                    <div class="scenario-grid" id="scenarioGrid"></div>
-                </div>
-            </div>
-
-            <!-- Right Column: UR -->
-            <div class="grid-col">
-                <div class="panel" data-type="ur">
-                    <div class="panel-header" style="padding-bottom: 5px;">
-                        <div><img src="images/ur_icon.jpg" style="height: 32px; border-radius: 4px;"></div>
-                    </div>
-                    <table class="telem-table" style="flex:1; margin-top:5px;">
-                        <tbody>
-                            <tr>
-                                <td>states</td>
-                                <td id="topic-states-main" style="color:#4ade80;">AUTO</td>
-                            </tr>
-                            <tr>
-                                <td>error</td>
-                                <td id="topic-error-main" style="color:#4ade80;">OK</td>
-                            </tr>
-                            <tr>
-                                <td>e-stop</td>
-                                <td id="topic-estop-main" style="color:#aaa;">Waiting</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Vision System Feed -->
-                <div class="panel" data-type="ur" style="flex: 0 0 220px;">
-                    <div class="panel-header">
-                        <div><img src="images/camera_icon.png" class="header-icon"> CAMERA</div>
-                    </div>
-                    <div id="camera-feed">
-                        <img id="camera-stream" src="" onerror="this.style.display='none'" />
-                    </div>
-                    <button class="btn-mir" style="margin-top:2px;" onclick="cmdCaptureImage()"><img
-                            src="images/screenshot_icon.png" class="btn-img-icon"> Capture</button>
-                </div>
-
-                <div class="panel" data-type="ur" style="flex:1; display:flex; flex-direction:column;">
-                    <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>3D Viewer</div>
-                        <button class="icon-action-btn" onclick="cmdRefresh3DViewer()" title="Refresh 3D Viewer">
-                            <img src="images/refresh_icon.png" alt="Refresh">
-                        </button>
-                    </div>
-                    <div id="urdf-viewer" style="flex:1; margin-bottom:10px; min-height: 180px;"></div>
-                    <div class="flex-row">
-                        <button class="btn-ur-action" style="flex:1;" onclick="cmdUrEstop()">E-Stop</button>
                     </div>
                 </div>
             </div>

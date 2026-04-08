@@ -35,6 +35,7 @@ let isUrManualMode = false;
 let isUrEstop = false;
 let isUrUnlock = false;
 let isUrInitial = false;
+let isUrFreedrive = false;
 let lidarTileIndex = 0;
 
 let isAdjustMode = false;
@@ -132,7 +133,7 @@ window.switchTab = (tab) => {
     document.getElementById('tabBtnLogs').classList.toggle('active', tab === 'logs');
 
     if (window.shared3DViewer && window.shared3DViewer.renderer) {
-        const targetId = (tab === 'setup') ? 'urdf-viewer-setup' : 'urdf-viewer';
+        const targetId = (tab === 'setup') ? 'urdf-viewer-setup' : 'urdf-viewer-main';
         const container = document.getElementById(targetId);
         if (container) {
             container.appendChild(window.shared3DViewer.renderer.domElement);
@@ -627,6 +628,12 @@ window.pollDetailedLogs = () => {
                     lastMirState = stat.state_text;
                     lastMissionText = stat.mission_text;
                     logMirSystemData(`상태 변경: ${stat.state_text} (${stat.mission_text || 'Idle'})`, 'info');
+                    
+                    // [NEW] Update Active Waypoint/Mission Text in Main Dashboard
+                    const activeTextEl = document.getElementById('activeMissionText');
+                    if (activeTextEl) {
+                        activeTextEl.innerText = stat.mission_text || (stat.state_text === 'Ready' ? 'Standby' : stat.state_text);
+                    }
                 }
 
                 const activeErrors = stat.errors || [];
@@ -766,30 +773,47 @@ window.syncMissionQueueUI = function (activeQueue) {
 };
 
 function updateWaypointHighlighting() {
-    if (!mirCtrl.map || !mirCtrl.map.waypoints) return;
-    const tolerance = 0.5;
-    let closestWp = null;
-    let minDist = Infinity;
+    if (!mirCtrl.map || !mirCtrl.map.waypoints || !globalRobotPosition) return;
+
+    const tolerance = 0.6;
+    let activeWp = null;
+
+    // 1. Find by Name (from active mission text) or Distance
+    const missionName = (lastMissionText || "").toLowerCase();
     mirCtrl.map.waypoints.forEach(wp => {
         const dx = globalRobotPosition.x - wp.pos_x;
         const dy = globalRobotPosition.y - wp.pos_y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < tolerance && dist < minDist) {
-            minDist = dist;
-            closestWp = wp;
+
+        // Match by name in mission text OR proximity
+        if ((wp.name && missionName.includes(wp.name.toLowerCase())) || dist < tolerance) {
+            activeWp = wp;
         }
     });
-    const posList = document.getElementById('mirPositionsList');
-    if (posList) {
+
+    // 2. Update Status Text & LED
+    const statusTextEl = document.getElementById('activeWaypointText');
+    const statusLedEl = document.getElementById('led-waypoint-active');
+    if (statusTextEl) statusTextEl.innerText = activeWp ? activeWp.name : 'Standby';
+    if (statusLedEl) updateLED('led-waypoint-active', activeWp ? 'ok' : 'err');
+
+    // 3. Highlight and SORT to top in Main Dashboard List
+    ['mirPositionsList', 'mirPositionsListMain'].forEach(id => {
+        const posList = document.getElementById(id);
+        if (!posList) return;
+
         const items = posList.querySelectorAll('.waypoint-item');
         items.forEach(item => {
-            if (closestWp && item.dataset.guid === closestWp.guid) {
-                item.classList.add('active-waypoint-highlight');
+            const isMatch = activeWp && item.dataset.guid === activeWp.guid;
+            if (isMatch) {
+                item.classList.add('active-item');
+                // [CRITICAL] Sort to top only for the Main Dashboard list
+                if (id === 'mirPositionsListMain') posList.prepend(item);
             } else {
-                item.classList.remove('active-waypoint-highlight');
+                item.classList.remove('active-item');
             }
         });
-    }
+    });
 }
 
 window.fetchAndRenderUserMissions = async () => {
@@ -845,25 +869,30 @@ window.fetchAndRenderUserMissions = async () => {
 };
 
 function updateMirPositionsList() {
-    const elList = document.getElementById('mirPositionsList');
-    if (!elList) return;
+    const lists = ['mirPositionsList', 'mirPositionsListMain'].map(id => document.getElementById(id)).filter(el => el);
+    if (lists.length === 0) return;
+
     const waypoints = mirCtrl.map.waypoints || [];
     const chargers = mirCtrl.map.chargers || [];
-    elList.innerHTML = '';
     const allPos = [
         ...waypoints.map(w => ({ ...w, icon: '📍', label: 'Waypoint' })),
         ...chargers.map(c => ({ ...c, icon: '🔋', label: 'Charger' }))
     ];
-    if (allPos.length === 0) {
-        elList.innerHTML = '<div style="padding:10px; color:#666;">No positions found.</div>';
-        return;
-    }
-    allPos.forEach(p => {
-        const item = document.createElement('div');
-        item.className = 'waypoint-item';
-        item.dataset.guid = p.guid;
-        item.innerHTML = `<span>${p.icon} ${p.name || 'Unnamed'}</span><span style="font-size:9px; color:#555;">${p.label}</span>`;
-        elList.appendChild(item);
+
+    lists.forEach(elList => {
+        elList.innerHTML = '';
+        if (allPos.length === 0) {
+            elList.innerHTML = '<div style="padding:10px; color:#666;">No positions found.</div>';
+            return;
+        }
+        allPos.forEach(p => {
+            const item = document.createElement('div');
+            item.className = 'waypoint-item';
+            item.dataset.guid = p.guid;
+            item.dataset.name = p.name; // Added for name matching
+            item.innerHTML = `<span>${p.icon} ${p.name || 'Unnamed'}</span><span style="font-size:9px; color:#555;">${p.label}</span>`;
+            elList.appendChild(item);
+        });
     });
 }
 
@@ -1032,6 +1061,8 @@ window.cmdUrUnlock = () => {
 
 window.cmdUrEstop = () => {
     isUrEstop = !isUrEstop;
+    urCtrl.publishEstop(isUrEstop);
+    showToast("E-Stop: " + (isUrEstop ? "ENGAGED" : "RELEASED"), "msg");
     ['topic-estop-main', 'topic-estop-setup'].forEach(id => {
         const el = document.getElementById(id);
         if (el) {
@@ -1048,6 +1079,17 @@ window.cmdUrEstop = () => {
 
     // Fire exactly once on click
     if (typeof urCtrl.publishEstop === 'function') urCtrl.publishEstop(isUrEstop);
+};
+
+window.cmdUrFreedrive = () => {
+    isUrFreedrive = !isUrFreedrive;
+    if (typeof urCtrl.publishFreedrive === 'function') urCtrl.publishFreedrive(isUrFreedrive);
+    showToast("Freedrive: " + (isUrFreedrive ? "ON" : "OFF"), "msg");
+    const btns = document.querySelectorAll('button[onclick="cmdUrFreedrive()"]');
+    btns.forEach(btn => {
+        btn.style.backgroundColor = isUrFreedrive ? COLOR_SKY_BLUE : COLOR_WHITE;
+        btn.style.color = isUrFreedrive ? COLOR_WHITE : COLOR_SKY_BLUE;
+    });
 };
 
 window.cmdSetInitialPosition = () => {
@@ -1088,7 +1130,7 @@ window.cmdAutoAdjust = () => {
 window.cmdAdjustRobotPosition = window.cmdAutoAdjust;
 
 window.cmdCaptureImage = () => {
-    const img = document.getElementById('camera-stream');
+    const img = document.getElementById('camera-stream-main');
     if (!img || !img.src || !img.src.includes('base64')) return;
     try {
         const base64Data = img.src.replace(/^data:image\/jpeg;base64,/, "");
@@ -1153,7 +1195,7 @@ function initROS3DViewer() {
     window.shared3DViewer = { renderer, camera, scene, robot: null };
 
     const isSetupActive = document.getElementById('tabSetup').classList.contains('active');
-    const targetId = isSetupActive ? 'urdf-viewer-setup' : 'urdf-viewer';
+    const targetId = isSetupActive ? 'urdf-viewer-setup' : 'urdf-viewer-main';
     const initialContainer = document.getElementById(targetId);
 
     if (initialContainer) {
@@ -1419,7 +1461,7 @@ window.onload = () => {
         appendLogRow('rosoutTbody', level, 'ros', msg);
     });
 
-    const imgStream = document.getElementById('camera-stream');
+    const imgStream = document.getElementById('camera-stream-main');
     urCtrl.startCameraSubscriber((b64) => {
         if (imgStream) {
             imgStream.src = "data:image/jpeg;base64," + b64;

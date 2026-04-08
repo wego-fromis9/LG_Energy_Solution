@@ -12,6 +12,7 @@ module.exports = {
         manualModeTopic: "/ur_manual_mode",       // std_msgs/msg/Bool
         unlockTopic: "/ur_unlock",                // std_msgs/msg/Bool
         estopTopic: "/ur_estop",                  // std_msgs/msg/Bool
+        freedriveTopic: "/ur_freedrive",          // std_msgs/msg/Bool
         jointTopic: "/joint_states",              // sensor_msgs/msg/JointState
         rosoutTopic: "/rosout",                   // rcl_interfaces/msg/Log
         cameraTopic: "/camera/color/image_raw/compressed", // Standard compressed topic
