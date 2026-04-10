@@ -10,8 +10,7 @@ module.exports = {
         scenarioTopic: "/scenario_trigger",    // Float32
         logTopic: "/ur_rosout",            // rcl_interfaces/msg/Log
         manualModeTopic: "/ur_manual_mode",       // std_msgs/msg/Bool
-        unlockTopic: "/ur_unlock",                // std_msgs/msg/Bool
-        estopTopic: "/ur_estop",                  // std_msgs/msg/Bool
+        lockTopic: "/ur_lock",                    // std_msgs/msg/Bool (Consolidated Lock/E-Stop)
         freedriveTopic: "/ur_freedrive",          // std_msgs/msg/Bool
         jointTopic: "/joint_states",              // sensor_msgs/msg/JointState
         rosoutTopic: "/rosout",                   // rcl_interfaces/msg/Log

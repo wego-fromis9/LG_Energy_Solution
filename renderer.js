@@ -22,6 +22,7 @@ let lastMissionText = '';
 let activeErrorCodes = new Set();
 let activeDiagnostics = new Set();
 window.shared3DViewer = null; // Global shared 3D viewer state
+let currentMirStateId = 3; // Tracks real-time MiR state_id
 
 // Map & Localization globals
 let globalRobotPosition = { x: 0, y: 0, orientation: 0 };
@@ -139,35 +140,39 @@ function getMirHost() {
 // -----------------------------------------------
 // Tab Switcher
 // -----------------------------------------------
+// -----------------------------------------------
+// Tab Switcher (Ultimate Fix)
+// -----------------------------------------------
 window.switchTab = (tab) => {
-    document.getElementById('tabSetup').classList.toggle('active', tab === 'setup');
-    document.getElementById('tabMain').classList.toggle('active', tab === 'main');
-    document.getElementById('tabLogs').classList.toggle('active', tab === 'logs');
-
-    document.getElementById('tabBtnSetup').classList.toggle('active', tab === 'setup');
-    document.getElementById('tabBtnMain').classList.toggle('active', tab === 'main');
-    document.getElementById('tabBtnLogs').classList.toggle('active', tab === 'logs');
+    const tabs = ['setup', 'main', 'mirLog', 'urLog', 'sysLog'];
+    tabs.forEach(t => {
+        const id = 'tab' + t.charAt(0).toUpperCase() + t.slice(1);
+        const btnId = 'tabBtn' + t.charAt(0).toUpperCase() + t.slice(1);
+        const elTab = document.getElementById(id);
+        const elBtn = document.getElementById(btnId);
+        if (elTab) elTab.classList.toggle('active', t === tab);
+        if (elBtn) elBtn.classList.toggle('active', t === tab);
+    });
 
     if (window.shared3DViewer && window.shared3DViewer.renderer) {
-        const targetId = (tab === 'setup') ? 'urdf-viewer-setup' : 'urdf-viewer-main';
-        const container = document.getElementById(targetId);
-        if (container) {
-            container.appendChild(window.shared3DViewer.renderer.domElement);
-        }
-    }
-
-    setTimeout(() => {
-        if (window.shared3DViewer && window.shared3DViewer.renderer) {
-            const container = window.shared3DViewer.renderer.domElement.parentElement;
-            if (container && container.clientWidth > 0) {
-                const w = container.clientWidth;
-                const h = container.clientHeight;
-                window.shared3DViewer.renderer.setSize(w, h);
-                window.shared3DViewer.camera.aspect = w / h;
-                window.shared3DViewer.camera.updateProjectionMatrix();
+        let targetId = (tab === 'setup') ? 'urdf-viewer-setup' : (tab === 'main' ? 'urdf-viewer-main' : null);
+        if (targetId) {
+            const container = document.getElementById(targetId);
+            if (container) {
+                container.appendChild(window.shared3DViewer.renderer.domElement);
+                setTimeout(() => {
+                    let w = container.clientWidth;
+                    let h = container.clientHeight;
+                    if (w > 0 && h > 0) {
+                        window.shared3DViewer.renderer.setSize(w, h, false);
+                        window.shared3DViewer.camera.aspect = w / h;
+                        window.shared3DViewer.camera.updateProjectionMatrix();
+                        window.shared3DViewer.controls.update();
+                    }
+                }, 100);
             }
         }
-    }, 100);
+    }
 };
 
 // -----------------------------------------------
@@ -312,13 +317,43 @@ window.updateDashboardErrorState = (isError) => {
     }
 };
 
+// -----------------------------------------------
+// Unified Logging & Notifications
+// -----------------------------------------------
+window.logSystemEvent = (msg, level = 'Info') => {
+    console.log(`[System] ${level}: ${msg}`);
+    
+    // Route to System Logs Table
+    const tbody = document.getElementById('rosoutTbody');
+    if (tbody) {
+        const row = document.createElement('tr');
+        const now = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+        row.innerHTML = `
+            <td>${now}</td>
+            <td style="color: ${level === 'Error' ? '#ff5252' : level === 'Warn' ? '#ff9800' : '#444'}; font-weight:700;">${level}</td>
+            <td>Local UI</td>
+            <td>${msg}</td>
+        `;
+        tbody.prepend(row);
+        if (tbody.rows.length > 100) tbody.deleteRow(100);
+    }
+    
+    // Auto-Toast for Errors/Warns if needed
+    if (level === 'Error') showToast(`[System Error] ${msg}`, 'err');
+};
+
 window.showToast = (msg, type = 'msg') => {
     const container = document.getElementById('toastContainer');
     if (!container) return;
+    
+    // Constraint: Limit toastContainer to showing only the newest popup
+    container.innerHTML = '';
+    
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.innerHTML = `<span>${msg}</span>`;
     container.appendChild(toast);
+    
     setTimeout(() => {
         toast.style.opacity = '0';
         setTimeout(() => toast.remove(), 500);
@@ -391,13 +426,40 @@ function pollTopicHeartbeats() {
     updateLED('led-ur-joint', alive(hb.joint) ? 'ok' : 'err');
     updateLED('led-ur-cam', alive(hb.camera) ? 'ok' : 'err');
 
-    // [CRITICAL FIX] Integrated UR State LED
-    // Priority: E-Stop (Red) > Lock (Yellow) > Unlock (Green)
-    let urStateColor = 'warn'; // Default Lock state (Yellow)
-    if (isUrEstop) urStateColor = 'err'; // E-Stop engaged (Red)
-    else if (isUrUnlock) urStateColor = 'ok'; // Unlocked (Green)
+    // [CRITICAL FIX] UR Priority State
+    let urStateColor = '';
+    let urStateText = 'UNKNOWN';
+
+    if (isUrEstop) {
+        urStateColor = 'err'; urStateText = 'E-STOP';
+    } else if (isUrUnlock) {
+        urStateColor = 'ok'; urStateText = 'UNLOCKED';
+    } else if (isUrFreedrive) {
+        urStateColor = 'info'; urStateText = 'FREEDRIVE';
+    } else {
+        urStateColor = 'warn'; urStateText = 'LOCKED';
+    }
 
     updateLED('led-ur-state', urStateColor);
+    updateLED('led-ur-state-main', urStateColor);
+    const urMainText = document.getElementById('ur-state-text-main');
+    if (urMainText) urMainText.textContent = urStateText;
+
+    // UR Logs Tab Bindings
+    updateLED('log-ur-lock-led', isUrUnlock ? 'ok' : 'warn');
+    const elUrLock = document.getElementById('log-ur-lock-text');
+    if (elUrLock) elUrLock.textContent = isUrUnlock ? "UNLOCKED" : "LOCKED";
+
+    updateLED('log-ur-estop-led', isUrEstop ? 'err' : 'ok');
+    const elUrEstop = document.getElementById('log-ur-estop-text');
+    if (elUrEstop) elUrEstop.textContent = isUrEstop ? "ENGAGED" : "CLEAR";
+
+    updateLED('log-ur-mode-led', isUrManualMode ? 'warn' : 'ok');
+    const elUrMode = document.getElementById('log-ur-mode-text');
+    if (elUrMode) elUrMode.textContent = isUrManualMode ? "MANUAL" : "AUTO";
+
+    const elUrErr = document.getElementById('log-ur-errors');
+    if (elUrErr) elUrErr.textContent = isUrEstop ? "1" : "0";
 }
 
 // -----------------------------------------------
@@ -653,9 +715,25 @@ window.pollDetailedLogs = () => {
                 }
 
                 const activeErrors = stat.errors || [];
+                // Route MiR API errors to System Logs
+                if (activeErrors.length > 0) {
+                    activeErrors.forEach(err => {
+                        logSystemEvent(`MiR Error [${err.code}]: ${err.description}`, 'Error');
+                    });
+                }
 
-                // Add LED logic for MiR
-                updateLED('led-mir-state', stat.state_id === 3 ? 'ok' : (stat.state_id === 4 ? 'warn' : 'err'));
+                // Sync global state safely
+                currentMirStateId = stat.state_id;
+
+                updateLED('led-mir-state', mirStateColor);
+                updateLED('led-mir-play', ([3, 5].includes(stat.state_id)) ? 'ok' : '');
+                
+                const isMissionActive = stat.mission_text && stat.mission_text !== 'None' && stat.mission_text !== '...';
+                updateLED('led-mir-miss', isMissionActive ? 'ok' : '');
+
+                updateLED('led-mir-state-main', mirStateColor);
+                const mirMainText = document.getElementById('mir-state-text-main');
+                if (mirMainText) mirMainText.textContent = stat.state_text || 'Unknown';
                 
                 // [NEW] Explicit Play/Pause LED: Green if State 3 (Play/Ready), Yellow if State 4 (Pause)
                 updateLED('led-mir-play', stat.state_id === 3 ? 'ok' : 'warn');
@@ -972,19 +1050,46 @@ window.cmdTogglePatrolCheckbox = () => {
     }
 };
 
+// [CRITICAL FIX] Safe toggle avoiding invalid states
 window.cmdMirPlayPause = async () => {
-    const target = mirCtrl.state.id === 3 ? 4 : 3;
+    // If currently operating (3 or 5), command Pause (4). Otherwise, command Ready (3).
+    const targetState = (currentMirStateId === 3 || currentMirStateId === 5) ? 4 : 3;
+    
+    // Fast UI sync
+    const tempColor = targetState === 3 ? 'ok' : '';
+    updateLED('led-mir-play', tempColor);
+    updateLED('led-mir-state-main', tempColor);
+    const mirMainText = document.getElementById('mir-state-text-main');
+    if (mirMainText) mirMainText.textContent = targetState === 3 ? 'Ready' : 'Pause';
+
     try {
-        const host = getMirHost();
-        const headers = getMirHeaders();
-        await fetch(`http://${host}/api/v2.0.0/status`, { method: 'PUT', headers, body: JSON.stringify({ state_id: target }) });
-    } catch (e) { }
+        const host = mirCtrl.getBaseUrl();
+        const headers = mirCtrl.getAuthHeader();
+        const res = await fetch(`${host}/status`, {
+            method: 'PUT',
+            headers: headers,
+            body: JSON.stringify({ state_id: targetState })
+        });
+        
+        if (res.ok) {
+            const cmdText = targetState === 3 ? "진행 (Play)" : "정지 (Pause)";
+            logSystemEvent(`${cmdText} 명령 전송`, 'Info');
+            showToast(`MiR Status: ${targetState === 3 ? 'PLAY' : 'PAUSED'}`, "msg");
+            if (typeof window.pollDetailedLogs === 'function') window.pollDetailedLogs();
+        } else {
+            showToast("상태 변경 실패", "error");
+            if (typeof window.pollDetailedLogs === 'function') window.pollDetailedLogs();
+        }
+    } catch(e) {
+        showToast("네트워크 오류 발생", "error");
+    }
 };
 
 window.cmdMirDock = () => {
     if (mirCtrl.missions.dockGuid) {
         const charger = (mirCtrl.map.chargers && mirCtrl.map.chargers.length > 0) ? mirCtrl.map.chargers[0].guid : null;
         mirCtrl.postMission(mirCtrl.missions.dockGuid, charger);
+        logSystemEvent("도킹 (Dock) 명령 전송", "Info");
     }
 };
 
@@ -995,12 +1100,18 @@ window.cmdMirCancel = async () => {
         await fetch(`http://${host}/api/v2.0.0/status`, { method: 'PUT', headers, body: JSON.stringify({ clear_error: true }) });
         await new Promise(r => setTimeout(r, 100));
         await fetch(`http://${host}/api/v2.0.0/status`, { method: 'PUT', headers, body: JSON.stringify({ state_id: 4 }) });
+        logSystemEvent("미션 취소 (Cancel) 명령 전송", "Warn");
+        showToast("Mission Cancelled", "warn");
     } catch (e) { }
 };
 
 window.cmdMirClearErr = async () => {
     try {
-        await fetch(`http://${getMirHost()}/api/v2.0.0/status`, { method: 'PUT', headers: getMirHeaders(), body: JSON.stringify({ clear_error: true }) });
+        const res = await fetch(`http://${getMirHost()}/api/v2.0.0/status`, { method: 'PUT', headers: getMirHeaders(), body: JSON.stringify({ clear_error: true }) });
+        if (res.ok) {
+            logSystemEvent("에러 초기화 (Clear) 명령 전송", "Info");
+            showToast("Errors cleared", "ok");
+        }
     } catch (e) { }
 };
 
@@ -1066,40 +1177,27 @@ window.cmdUrManualMode = () => {
 };
 
 window.cmdUrLock = () => {
-    if (typeof urCtrl.publishUnlock === 'function') urCtrl.publishUnlock(false);
-    showToast("Command Sent: UR LOCK", "msg");
+    if (typeof urCtrl.publishLock === 'function') urCtrl.publishLock(true);
+    logSystemEvent("로봇 잠금 (Lock) 명령 전송", "Info");
+    showToast("Command Sent: UR LOCK (true)", "msg");
 };
 
 window.cmdUrUnlock = () => {
-    if (typeof urCtrl.publishUnlock === 'function') urCtrl.publishUnlock(true);
-    showToast("Command Sent: UR UNLOCK", "msg");
+    if (typeof urCtrl.publishLock === 'function') urCtrl.publishLock(false);
+    logSystemEvent("로봇 잠금 해제 (Unlock) 명령 전송", "Info");
+    showToast("Command Sent: UR UNLOCK (false)", "msg");
 };
 
 window.cmdUrEstop = () => {
-    isUrEstop = !isUrEstop;
-    urCtrl.publishEstop(isUrEstop);
-    showToast("E-Stop: " + (isUrEstop ? "ENGAGED" : "RELEASED"), "msg");
-    ['topic-estop-main', 'topic-estop-setup'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.textContent = isUrEstop ? "ENGAGED" : "OK";
-            el.style.color = isUrEstop ? COLOR_SKY_BLUE : "#aaa";
-        }
-    });
-
-    const btns = document.querySelectorAll('button[onclick="cmdUrEstop()"]');
-    btns.forEach(btn => {
-        btn.style.backgroundColor = isUrEstop ? COLOR_SKY_BLUE : COLOR_WHITE;
-        btn.style.color = isUrEstop ? COLOR_WHITE : COLOR_SKY_BLUE;
-    });
-
-    // Fire exactly once on click
-    if (typeof urCtrl.publishEstop === 'function') urCtrl.publishEstop(isUrEstop);
+    if (typeof urCtrl.publishLock === 'function') urCtrl.publishLock(true);
+    logSystemEvent("비상 정지 (E-Stop) 명령 전송", "Error");
+    showToast("E-Stop ENGAGED: UR Locked", "msg");
 };
 
 window.cmdUrFreedrive = () => {
     isUrFreedrive = !isUrFreedrive;
     if (typeof urCtrl.publishFreedrive === 'function') urCtrl.publishFreedrive(isUrFreedrive);
+    logSystemEvent(`리드스루 (Freedrive) 모드 ${isUrFreedrive ? '진입' : '해제'}`, "Info");
     showToast("Freedrive: " + (isUrFreedrive ? "ON" : "OFF"), "msg");
     const btns = document.querySelectorAll('button[onclick="cmdUrFreedrive()"]');
     btns.forEach(btn => {
@@ -1109,6 +1207,7 @@ window.cmdUrFreedrive = () => {
 };
 
 window.cmdSetInitialPosition = () => {
+    // Fire & Forget: sends true only
     if (typeof urCtrl.publishInitialPose === 'function') urCtrl.publishInitialPose(true);
     showToast("Command Sent: INITIAL POSITION", "msg");
 };
@@ -1164,137 +1263,239 @@ window.cmdCaptureImage = () => {
 
 let globalTargetJoints = {};
 
-function initROS3DViewer() {
-    urCtrl.startJointSubscriber((msg) => {
-        if (!msg) return;
-        const newJoints = {};
+// -----------------------------------------------
+// ROS 3D Viewer Initialization (With Alert Diagnostics)
+// -----------------------------------------------
+window.initROS3DViewer = () => {
+    if (window.shared3DViewer) return;
 
-        if (msg.name && msg.position) {
-            for (let i = 0; i < msg.name.length; i++) {
-                newJoints[msg.name[i]] = msg.position[i];
-            }
-        } else if (typeof msg === 'object') {
-            for (const key in msg) {
-                newJoints[key] = msg[key];
-            }
-        }
+    try {
+        urCtrl.startJointSubscriber((msg) => {
+            if (!msg) return;
+            const newJoints = {};
+            const jointDOMMap = {
+                "shoulder_pan_joint": "log-j-base",
+                "shoulder_lift_joint": "log-j-shoulder",
+                "elbow_joint": "log-j-elbow",
+                "wrist_1_joint": "log-j-wrist1",
+                "wrist_2_joint": "log-j-wrist2",
+                "wrist_3_joint": "log-j-wrist3"
+            };
 
-        if (Object.keys(newJoints).length > 0) {
-            globalTargetJoints = newJoints;
-        }
-    });
-
-    const modelBaseConfig = {
-        heading: 0,
-        rosToWebGLRotation: -Math.PI / 2
-    };
-
-    const jointCalibration = {
-        'shoulder_pan_joint': { multiplier: 1, offset: 0 },
-        'shoulder_lift_joint': { multiplier: 1, offset: 0 },
-        'elbow_joint': { multiplier: 1, offset: 0 },
-        'wrist_1_joint': { multiplier: 1, offset: 0 },
-        'wrist_2_joint': { multiplier: 1, offset: 0 },
-        'wrist_3_joint': { multiplier: 1, offset: 0 }
-    };
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#ebebeb');
-    scene.add(new THREE.AxesHelper(1));
-    scene.add(new THREE.GridHelper(10, 10, 0xcccccc, 0xdddddd));
-
-    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
-    camera.position.set(1.5, 1.0, 1.5);
-    camera.lookAt(0, 0, 0);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    window.shared3DViewer = { renderer, camera, scene, robot: null };
-
-    const isSetupActive = document.getElementById('tabSetup').classList.contains('active');
-    const targetId = isSetupActive ? 'urdf-viewer-setup' : 'urdf-viewer-main';
-    const initialContainer = document.getElementById(targetId);
-
-    if (initialContainer) {
-        initialContainer.appendChild(renderer.domElement);
-        const w = initialContainer.clientWidth || 800;
-        const h = initialContainer.clientHeight || 450;
-        renderer.setSize(w, h);
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-    }
-
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    scene.add(new THREE.DirectionalLight(0xffffff, 1.0).add(new THREE.AmbientLight(0xffffff, 0.6)));
-
-    const rosWrapper = new THREE.Group();
-    rosWrapper.rotation.x = modelBaseConfig.rosToWebGLRotation;
-    scene.add(rosWrapper);
-
-    const loader = new URDFLoader(new THREE.LoadingManager());
-    loader.packages = { 'ur_description': `file://${__dirname}/src/Universal_Robots_ROS2_Description` };
-
-    loader.load(`file://${__dirname}/src/ur5e.urdf`, robot => {
-        rosWrapper.add(robot);
-        window.shared3DViewer.robot = robot;
-        robot.rotation.z = modelBaseConfig.heading;
-        logUr(`[WebGL] Shared URDF model loaded.`);
-    });
-
-    const renderLoop = function () {
-        urdfReqId = requestAnimationFrame(renderLoop);
-        const robot = window.shared3DViewer.robot;
-
-        if (robot && Object.keys(globalTargetJoints).length > 0) {
-            for (const jName in globalTargetJoints) {
-                const targetPosition = globalTargetJoints[jName];
-                if (typeof targetPosition === 'number' && !isNaN(targetPosition)) {
-                    const cal = jointCalibration[jName] || { multiplier: 1, offset: 0 };
-                    const finalAngle = (targetPosition * cal.multiplier) + cal.offset;
-
-                    if (typeof robot.setJointValue === 'function') {
-                        robot.setJointValue(jName, finalAngle);
+            if (msg.name && msg.position) {
+                for (let i = 0; i < msg.name.length; i++) {
+                    newJoints[msg.name[i]] = msg.position[i];
+                    if (jointDOMMap[msg.name[i]]) {
+                        const deg = (msg.position[i] * (180 / Math.PI)).toFixed(2);
+                        const el = document.getElementById(jointDOMMap[msg.name[i]]);
+                        if (el) el.innerText = deg;
                     }
-                    else if (robot.joints && robot.joints[jName]) {
-                        robot.joints[jName].jointValue = finalAngle;
+                }
+            } else if (typeof msg === 'object') {
+                for (const key in msg) {
+                    newJoints[key] = msg[key];
+                    if (jointDOMMap[key]) {
+                        const deg = (msg[key] * (180 / Math.PI)).toFixed(2);
+                        const el = document.getElementById(jointDOMMap[key]);
+                        if (el) el.innerText = deg;
                     }
                 }
             }
-        }
-
-        controls.update();
-
-        const container = renderer.domElement.parentElement;
-        if (container && container.clientWidth > 0 && container.clientHeight > 0) {
-            const width = container.clientWidth;
-            const height = container.clientHeight;
-
-            if (renderer.domElement.width !== width || renderer.domElement.height !== height) {
-                renderer.setSize(width, height, false);
-                camera.aspect = width / height;
-                camera.updateProjectionMatrix();
+            if (Object.keys(newJoints).length > 0) {
+                globalTargetJoints = newJoints;
             }
-            renderer.render(scene, camera);
+        });
+
+        const jointCalibration = {
+            'shoulder_pan_joint': { multiplier: 1, offset: 0 },
+            'shoulder_lift_joint': { multiplier: 1, offset: 0 },
+            'elbow_joint': { multiplier: 1, offset: 0 },
+            'wrist_1_joint': { multiplier: 1, offset: 0 },
+            'wrist_2_joint': { multiplier: 1, offset: 0 },
+            'wrist_3_joint': { multiplier: 1, offset: 0 }
+        };
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setClearColor(0xebebeb, 1);
+        
+        renderer.domElement.style.width = '100%';
+        renderer.domElement.style.height = '100%';
+        renderer.domElement.style.display = 'block';
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, 1.0, 0.1, 100);
+        camera.position.set(1.5, 1.5, 1.5);
+        camera.lookAt(0, 0, 0);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.target.set(0, 0, 0);
+
+        const gridHelper = new THREE.GridHelper(2, 20, 0xaaaaaa, 0xdddddd);
+        scene.add(gridHelper);
+        scene.add(new THREE.AxesHelper(0.5));
+
+        const dLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        dLight.position.set(5, 10, 5);
+        scene.add(dLight);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+        window.shared3DViewer = { renderer, camera, scene, controls, robot: null };
+
+        const activeTabStr = document.querySelector('.tab-btn.active')?.id || 'tabBtnSetup';
+        let targetEl = document.getElementById(activeTabStr === 'tabBtnMain' ? 'urdf-viewer-main' : 'urdf-viewer-setup');
+        if (targetEl) targetEl.appendChild(renderer.domElement);
+
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (let entry of entries) {
+                if (window.shared3DViewer && entry.target.contains(window.shared3DViewer.renderer.domElement)) {
+                    const { width, height } = entry.contentRect;
+                    if (width > 0 && height > 0) {
+                        window.shared3DViewer.renderer.setSize(width, height, false);
+                        window.shared3DViewer.camera.aspect = width / height;
+                        window.shared3DViewer.camera.updateProjectionMatrix();
+                        window.shared3DViewer.renderer.render(scene, camera); 
+                    }
+                }
+            }
+        });
+        
+        const elSetup = document.getElementById('urdf-viewer-setup');
+        const elMain = document.getElementById('urdf-viewer-main');
+        if (elSetup) resizeObserver.observe(elSetup);
+        if (elMain) resizeObserver.observe(elMain);
+
+        // [CRITICAL FIX] DYNAMIC LOADER DETECTION + ALERT
+        let LoaderClass = null;
+        if (typeof URDFLoader !== 'undefined') LoaderClass = URDFLoader;
+        else if (typeof window.URDFLoader !== 'undefined') LoaderClass = window.URDFLoader;
+        else if (typeof THREE.URDFLoader !== 'undefined') LoaderClass = THREE.URDFLoader;
+
+        if (!LoaderClass) {
+            const errorMsg = "[3D Viewer Error] URDFLoader class could not be found. Check your internet connection to the CDN.";
+            console.error(errorMsg);
+            alert(errorMsg); // Push to OS UI
+            return;
         }
-    };
-    renderLoop();
-}
 
-window.cmdRefresh3DViewer = () => {
-    if (urdfReqId) cancelAnimationFrame(urdfReqId);
+        const manager = new THREE.LoadingManager();
+        manager.onLoad = () => {
+            console.log("[3D Viewer] All meshes parsed and loaded. Aligning camera.");
+            if (window.shared3DViewer && window.shared3DViewer.controls) {
+                window.shared3DViewer.controls.reset();
+                window.shared3DViewer.camera.position.set(1.5, 1.5, 1.5);
+                window.shared3DViewer.camera.lookAt(0, 0, 0);
+                window.shared3DViewer.controls.target.set(0, 0, 0);
+                window.shared3DViewer.controls.update();
+            }
+        };
 
-    if (window.shared3DViewer && window.shared3DViewer.renderer) {
-        window.shared3DViewer.renderer.dispose();
+        const loader = new LoaderClass(manager);
+        loader.packages = { 'ur_description': `file://${__dirname}/src/Universal_Robots_ROS2_Description` };
+        
+        const loadRobot = (urdfData) => {
+            try {
+                const robot = loader.parse(urdfData);
+                const rosWrapper = new THREE.Group();
+                rosWrapper.rotation.x = -Math.PI / 2;
+                rosWrapper.add(robot);
+                scene.add(rosWrapper);
+                window.shared3DViewer.robot = robot;
+            } catch (parseError) {
+                const errorMsg = `[3D Viewer Error] Failed to parse URDF file:\n${parseError.message}`;
+                console.error(errorMsg);
+                alert(errorMsg); // Push to OS UI
+            }
+        };
+
+        // [CRITICAL FIX] FILE PATH DETECTION + ALERT
+        const path1 = path.join(__dirname, 'ur5e.urdf');
+        const path2 = path.join(__dirname, 'src', 'ur5e.urdf');
+        
+        fs.readFile(path1, 'utf8', (err, data) => {
+            if (err) { 
+                fs.readFile(path2, 'utf8', (err2, data2) => {
+                    if (err2) { 
+                        const errorMsg = `[3D Viewer Error] URDF file could not be found.\nAttempted paths:\n1. ${path1}\n2. ${path2}\nError: ${err2.message}`;
+                        console.error(errorMsg);
+                        alert(errorMsg); // Push to OS UI
+                        return; 
+                    }
+                    loadRobot(data2);
+                });
+                return; 
+            }
+            loadRobot(data);
+        });
+
+        // [CRITICAL FIX] RENDER LOOP DECLARED EXACTLY ONCE
+        const renderLoop = () => {
+            requestAnimationFrame(renderLoop);
+            if (window.shared3DViewer && window.shared3DViewer.controls) {
+                const robot = window.shared3DViewer.robot;
+                if (robot && Object.keys(globalTargetJoints).length > 0) {
+                    for (const jName in globalTargetJoints) {
+                        try {
+                            const targetPosition = globalTargetJoints[jName];
+                            if (typeof targetPosition === 'number' && !isNaN(targetPosition)) {
+                                const cal = jointCalibration[jName] || { multiplier: 1, offset: 0 };
+                                const finalAngle = (targetPosition * cal.multiplier) + cal.offset;
+                                if (typeof robot.setJointValue === 'function') {
+                                    robot.setJointValue(jName, finalAngle);
+                                } else if (robot.joints && robot.joints[jName]) {
+                                    robot.joints[jName].jointValue = finalAngle;
+                                }
+                            }
+                        } catch (jointError) {
+                            // Silent catch prevents a missing joint from permanently killing the render loop
+                        }
+                    }
+                }
+                window.shared3DViewer.controls.update();
+                window.shared3DViewer.renderer.render(window.shared3DViewer.scene, window.shared3DViewer.camera);
+            }
+        };
+        
+        renderLoop(); // Start loop
+
+    } catch (e) {
+        const errorMsg = `[3D Viewer Fatal Error] Initialization failed:\n${e.message}`;
+        console.error(errorMsg, e);
+        alert(errorMsg); // Push to OS UI
     }
-
-    const c1 = document.getElementById('urdf-viewer');
-    const c2 = document.getElementById('urdf-viewer-setup');
-    if (c1) c1.innerHTML = '';
-    if (c2) c2.innerHTML = '';
-
-    initROS3DViewer();
-    logUr("[INFO] 3D Viewer refreshed.");
-    addNotification("Success: 3D Viewer context re-initialized", "ok");
 };
+
+window.addEventListener('resize', () => {
+    if (!window.shared3DViewer) return;
+    const activeTabStr = document.querySelector('.tab-btn.active')?.id || 'tabBtnSetup';
+    let targetEl = document.getElementById(activeTabStr === 'tabBtnMain' ? 'urdf-viewer-main' : 'urdf-viewer-setup');
+    if (targetEl && window.shared3DViewer.renderer) {
+        let w = targetEl.clientWidth || 400;
+        let h = targetEl.clientHeight || 300;
+        window.shared3DViewer.renderer.setSize(w, h, false);
+        window.shared3DViewer.camera.aspect = w / h;
+        window.shared3DViewer.camera.updateProjectionMatrix();
+    }
+});
+
+// Manual refresh helper
+window.cmdRefresh3DViewer = () => {
+    if (window.shared3DViewer && window.shared3DViewer.controls) {
+        window.shared3DViewer.controls.reset();
+        window.shared3DViewer.camera.position.set(1.5, 1.5, 1.5);
+        window.shared3DViewer.camera.lookAt(0, 0, 0);
+        window.shared3DViewer.controls.target.set(0, 0, 0);
+        window.shared3DViewer.controls.update();
+        showToast("3D Viewer Camera Reset", "msg");
+    } else {
+        window.shared3DViewer = null;
+        initROS3DViewer();
+        showToast("3D Viewer Initialized", "msg");
+    }
+};
+
 
 
 function startUrStateSubscribers() {
@@ -1394,30 +1595,52 @@ function connectMirWebSocket() {
     const ws = new WebSocket(`ws://${host}:9090`);
 
     ws.onopen = () => {
-        console.log(`[MiR WebSocket] Connected to ${host}:9090`);
+        console.log(`[MiR WebSocket] Connected to ${host}:9090 (Diagnostics Mode)`);
+        
+        // Unified Log Subscription
         ws.send(JSON.stringify({
             "op": "subscribe",
             "topic": "/rosout",
             "type": "rosgraph_msgs/Log"
         }));
+
+        // Hardware Health Subscription
+        ws.send(JSON.stringify({ "op": "subscribe", "topic": "/diagnostics" }));
+        ws.send(JSON.stringify({ "op": "subscribe", "topic": "/diagnostics_agg" }));
     };
 
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            if (data.msg && data.msg.level !== undefined) {
+            
+            // 1. Log Routing (/rosout)
+            if (data.topic === "/rosout" && data.msg && data.msg.level !== undefined) {
                 const log = data.msg;
-
                 let level = "INFO";
                 if (log.level === 4) level = "WARN";
                 else if (log.level >= 8) level = "ERROR";
                 else if (log.level === 1) return;
-
                 const ts = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-
                 if (typeof appendLogRow === 'function') {
                     appendLogRow('mirLogTbody', level, log.name || 'System', log.msg || '', ts);
                 }
+            }
+
+            // 2. Hardware Health Mapping (/diagnostics)
+            if (data.op === "publish" && (data.topic === "/diagnostics" || data.topic === "/diagnostics_agg")) {
+                const statusArr = data.msg.status || [];
+                statusArr.forEach(item => {
+                    const name = item.name.toLowerCase();
+                    const level = item.level; // 0=OK, 1=Warn, 2+=Error, -1=Off
+                    const statusClass = (level === 0) ? 'ok' : (level === 1) ? 'warn' : (level === -1) ? '' : 'err';
+
+                    if (name.includes("/computer")) updateLED("hh-computer", statusClass);
+                    else if (name.includes("/motors")) updateLED("hh-motors", statusClass);
+                    else if (name.includes("/power system")) updateLED("hh-power", statusClass);
+                    else if (name.includes("/safety system")) updateLED("hh-safety", statusClass);
+                    else if (name.includes("/sensors")) updateLED("hh-sensors", statusClass);
+                    else if (name.includes("/serial interface")) updateLED("hh-serial", statusClass);
+                });
             }
         } catch (e) {
             console.error("[MiR WebSocket] Error parsing message:", e);
@@ -1444,8 +1667,22 @@ window.onload = () => {
         set('mirRobotNameSetup', state.robot_name || "Unknown");
         set('mirSerialSetup', state.serial_number || "Unknown");
 
-        const batMins = state.battery_time_remaining ? Math.floor(state.battery_time_remaining / 60) : 0;
-        set('mirBatteryTime', batMins > 0 ? `${batMins} min` : "—");
+        // [CRITICAL FIX] Safe Battery Time Formatting (H시간 M분)
+        const totalSecs = state.battery_time_remaining || 0;
+        let timeStr = "—";
+        if (totalSecs > 0) {
+            const h = Math.floor(totalSecs / 3600);
+            const m = Math.floor((totalSecs % 3600) / 60);
+            timeStr = h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+        }
+
+        set('mirBatteryTime', timeStr);
+
+        // Sync Top Bar Battery Info
+        const topBatLevel = document.getElementById('top-battery-level');
+        const topBatTime = document.getElementById('top-battery-time');
+        if (topBatLevel) topBatLevel.innerText = `${(state.battery || 0).toFixed(1)}%`;
+        if (topBatTime) topBatTime.innerText = totalSecs > 0 ? timeStr : "—";
 
         const upHrs = state.uptime ? Math.floor(state.uptime / 3600) : 0;
         const upMins = state.uptime ? Math.floor((state.uptime % 3600) / 60) : 0;
@@ -1459,15 +1696,29 @@ window.onload = () => {
         globalRobotPosition.orientation = state.theta;
 
         if (extra && extra.positionsLoaded) { updateWaypointCheckboxes(); updateMirPositionsList(); }
+
+        // [NEW] Bind Telemetry to Logs Tab
+        const setLocal = (id, val) => { const el = document.getElementById(id); if (el) el.innerText = val; };
+        setLocal('log-mir-sn', state.serial_number || "Unknown");
+        setLocal('log-mir-bat', `${(state.battery || 0).toFixed(1)}%`);
+        setLocal('log-mir-dist', `${(state.moved_distance || 0).toFixed(2)} m`);
+        const logUpMins = state.uptime ? Math.floor(state.uptime / 60) : 0;
+        setLocal('log-mir-uptime', `${Math.floor(logUpMins / 60)}h ${logUpMins % 60}m`);
     }, document.getElementById('setupMapCanvas'));
 
     urCtrl.startLogSubscriber((msg) => {
         if (urCtrl.lastHeartbeat) urCtrl.lastHeartbeat.log = new Date();
         const text = msg.msg || (typeof msg === 'string' ? msg : JSON.stringify(msg));
-        const level = (text.toLowerCase().includes("error") || msg.level >= 40) ? "ERROR" : "INFO";
+        const levelCode = msg.level || 2;
+        const level = (text.toLowerCase().includes("error") || levelCode >= 8) ? "ERROR" : "INFO";
         const nodeName = msg.name || 'UR_Node';
-        appendLogRow('urLogTbody', level, nodeName, text);
+        
+        // Route UR Errors to System Logs
+        if (level === 'ERROR') {
+            logSystemEvent(`UR Error: ${text}`, 'Error');
+        }
 
+        appendLogRow('urLogTbody', level, nodeName, text);
         updateDashboardErrorState(level === "ERROR");
     });
 

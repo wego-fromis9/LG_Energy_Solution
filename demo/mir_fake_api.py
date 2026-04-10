@@ -1,55 +1,40 @@
-import websocket
 import json
 import time
+try:
+    import websocket
+except ImportError:
+    print("라이브러리 설치가 필요합니다: pip3 install websocket-client")
+    exit()
 
-# MiR 로봇의 웹소켓 포트는 기본적으로 9090을 사용합니다.
 MIR_IP = "192.168.12.20"
-WS_URL = f"ws://{MIR_IP}:9090"
 
 def on_message(ws, message):
-    # 로봇이 실시간으로 뿜어내는 데이터를 받아서 파싱합니다.
     data = json.loads(message)
-    if 'msg' in data:
-        log_msg = data['msg']
-        
-        # ROS 로그 레벨 구분 (1:DEBUG, 2:INFO, 4:WARN, 8:ERROR, 16:FATAL)
-        level_num = log_msg.get('level', 2)
-        level_str = "INFO"
-        if level_num == 4: level_str = "WARN"
-        elif level_num >= 8: level_str = "ERROR"
-
-        # 로그 출력
-        print(f"[{level_str}] 모듈: {log_msg.get('name', 'N/A')} | 메시지: {log_msg.get('msg', 'N/A')}")
-
-def on_error(ws, error):
-    print(f"❌ 웹소켓 에러: {error}")
-
-def on_close(ws, close_status_code, close_msg):
-    print("🔌 웹소켓 연결이 종료되었습니다.")
+    msg_data = data.get('msg', {})
+    
+    # ROS /diagnostics 토픽은 내부에 'status' 배열을 가집니다.
+    if 'status' in msg_data:
+        print("\n========== [빙고!] Hardware Health (Diagnostics) 데이터 수신 ==========\n")
+        # 데이터가 너무 길 수 있으므로 예쁘게 출력
+        print(json.dumps(msg_data, indent=2, ensure_ascii=False))
+        # 데이터 구조만 파악하면 되므로 첫 번째 메시지만 받고 연결을 끊습니다.
+        ws.close()
 
 def on_open(ws):
-    print(f"✅ MiR 로봇({MIR_IP}:9090) ROSbridge 연결 성공!")
-    print("📡 실시간 시스템 로그(/rosout) 구독을 시작합니다...\n" + "="*50)
+    print(f"[{MIR_IP}:9090] 웹소켓 연결 성공!")
+    print("/diagnostics 및 /diagnostics_agg 토픽 도청 중...")
     
-    # 로봇의 전체 시스템 로그(/rosout) 토픽을 구독(Subscribe)하겠다는 명령을 보냅니다.
-    subscribe_msg = {
-        "op": "subscribe",
-        "topic": "/rosout",
-        "type": "rosgraph_msgs/Log"
-    }
-    ws.send(json.dumps(subscribe_msg))
+    # 2가지 유력한 진단 토픽 모두 구독 요청
+    req1 = {"op": "subscribe", "topic": "/diagnostics"}
+    req2 = {"op": "subscribe", "topic": "/diagnostics_agg"}
+    
+    ws.send(json.dumps(req1))
+    ws.send(json.dumps(req2))
+
+def on_error(ws, error):
+    print(f"Error: {error}")
 
 if __name__ == "__main__":
-    print(f"[{time.strftime('%H:%M:%S')}] 로봇 내부 신경망 접속 시도 중...")
-    
-    # 웹소켓 앱 실행
-    wsapp = websocket.WebSocketApp(
-        WS_URL,
-        on_open=on_open,
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close
-    )
-    
-    # 무한 루프하며 로그 수신
-    wsapp.run_forever()
+    ws_url = f"ws://{MIR_IP}:9090"
+    ws = websocket.WebSocketApp(ws_url, on_open=on_open, on_message=on_message, on_error=on_error)
+    ws.run_forever()

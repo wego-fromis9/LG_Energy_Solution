@@ -437,9 +437,11 @@
 
         /* Wrapper for the dashed line connection */
         .remote-tree-wrapper {
-            display: none; /* Toggled by JS */
+            display: none;
+            /* Toggled by JS */
             flex-direction: column;
-            padding-left: 18px; /* Indent like a tree branch */
+            padding-left: 18px;
+            /* Indent like a tree branch */
             border-left: 2px dashed #00a5e5;
             margin-left: 15px;
             margin-top: 10px;
@@ -452,10 +454,11 @@
             border: 2px solid #00a5e5;
             border-radius: 8px;
             padding: 12px;
-            display: flex; /* Always flex inside the wrapper */
+            display: flex;
+            /* Always flex inside the wrapper */
             flex-direction: column;
             gap: 10px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
             width: 160px;
         }
 
@@ -1049,10 +1052,26 @@
                 class="header-icon"> Setup</button>
         <button class="tab-btn" id="tabBtnMain" onclick="switchTab('main')"><img src="images/dashboard_icon.png"
                 class="header-icon"> Dashboard</button>
-        <button class="tab-btn logs" id="tabBtnLogs" onclick="switchTab('logs')"><img src="images/log_icon.png"
-                class="header-icon"> Logs</button>
+        <button class="tab-btn" id="tabBtnMirLog" onclick="switchTab('mirLog')"><img src="images/mir_icon.jpeg"
+                class="header-icon"> MiR Logs</button>
+        <button class="tab-btn" id="tabBtnUrLog" onclick="switchTab('urLog')"><img src="images/ur_icon.jpg"
+                class="header-icon"> UR Logs</button>
+        <button class="tab-btn" id="tabBtnSysLog" onclick="switchTab('sysLog')"><img
+                src="images/system_serical_icon.png" class="header-icon"> System Logs</button>
 
         <div class="notification-area">
+            <!-- Global Battery Status (Restored) -->
+            <div
+                style="display:flex; align-items:center; gap: 12px; margin-right: 15px; font-size: 12px; font-weight: 700; color: #555;">
+                <div style="display:flex; align-items:center;" title="Battery Level">
+                    <img src="images/battery_charge_icon.png" style="height:18px; margin-right:4px;">
+                    <span id="top-battery-level">--%</span>
+                </div>
+                <div style="display:flex; align-items:center;" title="Time Left">
+                    <span id="top-battery-time" style="color:#888;">-- min</span>
+                </div>
+            </div>
+
             <div class="notification-bell" onclick="toggleNotificationDropdown()">
                 <img src="images/bell_icon.png">
                 <span id="notificationBadge" class="notification-badge" style="display:none;"></span>
@@ -1060,7 +1079,9 @@
             <div id="notificationDropdown" class="notification-dropdown">
                 <div class="dropdown-header">
                     Notifications
-                    <button class="clear-btn" onclick="clearNotifications()">Clear</button>
+                    <button class="icon-action-btn" onclick="clearNotifications()" title="Clear all">
+                        <img src="images/clear_icon.png" style="height:14px; vertical-align:middle;">
+                    </button>
                 </div>
                 <div id="notificationList" class="dropdown-list">
                     <div style="padding:15px; color:#aaa; font-size:11px; text-align:center;">No recent notifications.
@@ -1286,18 +1307,33 @@
                 <div class="panel" data-type="center" style="flex: 1; display:flex; flex-direction:column;">
                     <div class="panel-header">
                         <div><img src="images/slam_icon.png" class="header-icon"> NAVIGATION MAP</div>
+
+                        <!-- Map Header Status Group (Restored) -->
+                        <div
+                            style="display:flex; align-items:center; gap:15px; margin-left:auto; margin-right:10px; font-size:11px; font-weight:700; color:#888;">
+                            <div style="display:flex; align-items:center;" title="UR State">
+                                <div class="led" id="led-ur-state-main"></div>UR: <span id="ur-state-text-main"
+                                    style="margin-left:4px; color:#333;">LOCKED</span>
+                            </div>
+                            <div style="display:flex; align-items:center;" title="MiR State">
+                                <div class="led" id="led-mir-state-main"></div>MiR: <span id="mir-state-text-main"
+                                    style="margin-left:4px; color:#333;">Waiting</span>
+                            </div>
+                        </div>
+
                         <button class="icon-action-btn" onclick="cmdRefreshSetupMap()" title="Refresh Map">
                             <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
                     </div>
 
                     <div class="map-container" style="flex:1; margin:0; position:relative; overflow:hidden;">
-                        
+
                         <!-- Dev Tool for Remote Control (Grouped as a tree) -->
                         <div class="map-tools-vertical">
                             <!-- [CRITICAL FIX] Added align-items: flex-start to prevent the button from stretching -->
                             <div style="display: flex; flex-direction: column; align-items: flex-start;">
-                                <button class="tool-btn" id="btnToggleRemote" onclick="toggleRemoteControl()" title="Toggle UR Controller">
+                                <button class="tool-btn" id="btnToggleRemote" onclick="toggleRemoteControl()"
+                                    title="Toggle UR Controller">
                                     <img src="images/control_icon.png" alt="Control">
                                 </button>
 
@@ -1308,8 +1344,12 @@
                                         <button class="scenario-btn" onclick="cmdScenario(1)">Scenario 1</button>
                                         <button class="scenario-btn" onclick="cmdScenario(2)">Scenario 2</button>
                                         <button class="scenario-btn" onclick="cmdScenario(3)">Scenario 3</button>
-                                        <button class="btn-danger" style="margin-top:5px; height:32px; font-size:11px;"
+                                        <button class="btn-danger"
+                                            style="margin-top:5px; height:32px; font-size:11px; width:100%;"
                                             onclick="cmdMirCancel()">CANCEL</button>
+                                        <button class="btn-danger"
+                                            style="margin-top:5px; height:32px; font-size:11px; width:100%;"
+                                            onclick="cmdMirClearErr()">CLEAR ERROR</button>
                                     </div>
                                 </div>
                             </div>
@@ -1352,24 +1392,122 @@
     </div>
 
     <!-- ==================== DETAILED LOGS TAB ==================== -->
-    <div class="tab-content" id="tabLogs">
-        <div class="grid-logs">
-            <!-- MiR System & Error Log -->
-            <div class="panel" data-type="mir">
+    <!-- ==================== DETAILED LOGS TAB ==================== -->
+    <!-- Shared Styles for Log Tabs -->
+    <style>
+        .log-top-1 {
+            flex: 1;
+            display: flex;
+            gap: 15px;
+            min-height: 0;
+        }
+
+        .log-bot-3 {
+            flex: 3;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            margin: 0 !important;
+        }
+
+        .log-half {
+            flex: 1;
+            background: #fff;
+            border-radius: 6px;
+            border: 1px solid #dcdcdc;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto;
+            border-top: 3px solid #00a5e5;
+        }
+
+        .log-robot-img {
+            width: 80px;
+            height: auto;
+            object-fit: contain;
+            flex-shrink: 0;
+            border: none;
+        }
+
+        .hh-item {
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+            color: #444;
+            font-weight: 600;
+        }
+
+        .hh-item .led {
+            margin-right: 8px;
+        }
+    </style>
+
+    <!-- ==================== 3. MiR LOGS TAB ==================== -->
+    <div class="tab-content" id="tabMirLog">
+        <div
+            style="flex: 1; display: flex; flex-direction: column; padding: 15px; background-color: #f0f0f0; overflow: hidden; gap: 15px;">
+            <div class="log-top-1">
+                <!-- MiR Info -->
+                <div class="log-half">
+                    <div
+                        style="font-weight: 700; font-size: 13px; border-bottom: 1px solid #eee; padding-bottom: 8px; color: #00a5e5; text-transform: uppercase;">
+                        MiR Model & State</div>
+                    <div style="display: flex; gap: 20px; align-items: flex-start; margin-top: 8px;">
+                        <img src="images/mir_icon.jpeg" class="log-robot-img">
+                        <div
+                            style="font-size: 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; color: #333;">
+                            <div><strong>Model:</strong> <span id="log-mir-model">Loading...</span></div>
+                            <div><strong>S/N:</strong> <span id="log-mir-sn">Loading...</span></div>
+                            <div><strong>Uptime:</strong> <span id="log-mir-uptime">0h 0m</span></div>
+                            <div><strong>Distance:</strong> <span id="log-mir-dist">0.00 m</span></div>
+                            <div><strong>Errors:</strong> <span id="log-mir-errors"
+                                    style="color: #ff4d4d; font-weight: bold;">0</span></div>
+                            <!-- <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><strong>Mission:</strong> <span id="log-mir-mission-text">None</span></div> -->
+                        </div>
+                    </div>
+                </div>
+                <!-- Hardware Health -->
+                <div class="log-half">
+                    <div
+                        style="font-weight: 700; font-size: 13px; border-bottom: 1px solid #eee; padding-bottom: 8px; color: #00a5e5; text-transform: uppercase;">
+                        Hardware Health</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+                        <div class="hh-item">
+                            <div class="led" id="hh-computer"></div> Computer
+                        </div>
+                        <div class="hh-item">
+                            <div class="led" id="hh-motors"></div> Motors
+                        </div>
+                        <div class="hh-item">
+                            <div class="led" id="hh-power"></div> Power System
+                        </div>
+                        <div class="hh-item">
+                            <div class="led" id="hh-safety"></div> Safety System
+                        </div>
+                        <div class="hh-item">
+                            <div class="led" id="hh-sensors"></div> Sensors
+                        </div>
+                        <div class="hh-item">
+                            <div class="led" id="hh-serial"></div> Serial Interface
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MiR Bottom Table -->
+            <div class="panel log-bot-3" data-type="mir">
                 <div class="panel-header" style="padding-bottom: 5px;">
-                    <div><img src="images/mir_icon.jpeg" style="height: 32px; border-radius: 4px;"></div>
+                    <div style="display:flex; align-items:center; gap:8px;"><img src="images/mir_icon.jpeg"
+                            style="height: 32px; border-radius: 4px; border:none;"> MIR EVENT LOGS</div>
                     <div style="display:flex; gap:5px;">
-                        <button class="icon-action-btn" onclick="pollDetailedLogs()" title="Refresh Logs">
-                            <img src="images/refresh_icon.png" alt="Refresh">
-                        </button>
+                        <button class="icon-action-btn" onclick="pollDetailedLogs()" title="Refresh Logs"><img
+                                src="images/refresh_icon.png"></button>
                         <button class="icon-action-btn" onclick="cmdSaveLog('mirLogTbody', 'MiR_Event_Logs')"
-                            title="Save CSV">
-                            <img src="images/csv_icon.png" alt="Save">
-                        </button>
+                            title="Save CSV"><img src="images/csv_icon.png"></button>
                         <button class="icon-action-btn" onclick="document.getElementById('mirLogTbody').innerHTML=''"
-                            title="Clear Logs">
-                            <img src="images/clear_icon.png" alt="Clear">
-                        </button>
+                            title="Clear Logs"><img src="images/clear_icon.png"></button>
                     </div>
                 </div>
                 <div class="log-table-container">
@@ -1390,23 +1528,83 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <!-- UR ROS2 Topic Log -->
-            <div class="panel" data-type="ur">
+    <!-- ==================== 4. UR LOGS TAB ==================== -->
+    <div class="tab-content" id="tabUrLog">
+        <div
+            style="flex: 1; display: flex; flex-direction: column; padding: 15px; background-color: #f0f0f0; overflow: hidden; gap: 15px;">
+            <div class="log-top-1">
+                <!-- UR Info -->
+                <div class="log-half">
+                    <div
+                        style="font-weight: 700; font-size: 13px; border-bottom: 1px solid #eee; padding-bottom: 8px; color: #00a5e5; text-transform: uppercase;">
+                        UR Model & State</div>
+                    <div style="display: flex; gap: 20px; align-items: flex-start; margin-top: 8px;">
+                        <img src="images/ur_icon.jpg" class="log-robot-img">
+                        <div
+                            style="font-size: 12px; display: flex; flex-direction: column; gap: 8px; flex: 1; color: #333;">
+                            <div><strong>Model:</strong> <span>UR5e</span></div>
+                            <div><strong>S/N:</strong> <span>Virtual-UR5e-01</span></div>
+                            <!-- <div style="display: flex; align-items: center;"><strong>Lock State:</strong>
+                                <div class="led" id="log-ur-lock-led" style="margin: 0 8px;"></div> <span
+                                    id="log-ur-lock-text">Unknown</span>
+                            </div> -->
+                            <!-- <div style="display: flex; align-items: center;"><strong>E-Stop State:</strong>
+                                <div class="led" id="log-ur-estop-led" style="margin: 0 8px;"></div> <span
+                                    id="log-ur-estop-text">Unknown</span>
+                            </div> -->
+                            <!-- <div style="display: flex; align-items: center;"><strong>Mode State:</strong>
+                                <div class="led" id="log-ur-mode-led" style="margin: 0 8px;"></div> <span
+                                    id="log-ur-mode-text">Unknown</span>
+                            </div> -->
+                            <div><strong>Errors:</strong> <span id="log-ur-errors"
+                                    style="color: #ff4d4d; font-weight: bold;">0</span></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- UR Joints -->
+                <div class="log-half">
+                    <div
+                        style="font-weight: 700; font-size: 13px; border-bottom: 1px solid #eee; padding-bottom: 8px; color: #00a5e5; text-transform: uppercase;">
+                        Joint Angles (deg)</div>
+                    <div
+                        style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px; margin-top: 8px; font-family: 'Roboto Mono', monospace; background: #f9f9f9; padding: 10px; border-radius: 6px; border: 1px solid #eee;">
+                        <div style="display: flex; justify-content: space-between;"><span
+                                style="color:#666;">Base:</span> <span id="log-j-base"
+                                style="font-weight:bold; color:#333;">0.00</span></div>
+                        <div style="display: flex; justify-content: space-between;"><span
+                                style="color:#666;">Shoulder:</span> <span id="log-j-shoulder"
+                                style="font-weight:bold; color:#333;">0.00</span></div>
+                        <div style="display: flex; justify-content: space-between;"><span
+                                style="color:#666;">Elbow:</span> <span id="log-j-elbow"
+                                style="font-weight:bold; color:#333;">0.00</span></div>
+                        <div style="display: flex; justify-content: space-between;"><span style="color:#666;">Wrist
+                                1:</span> <span id="log-j-wrist1" style="font-weight:bold; color:#333;">0.00</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;"><span style="color:#666;">Wrist
+                                2:</span> <span id="log-j-wrist2" style="font-weight:bold; color:#333;">0.00</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;"><span style="color:#666;">Wrist
+                                3:</span> <span id="log-j-wrist3" style="font-weight:bold; color:#333;">0.00</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- UR Bottom Table -->
+            <div class="panel log-bot-3" data-type="ur">
                 <div class="panel-header" style="padding-bottom: 5px;">
-                    <div><img src="images/ur_icon.jpg" style="height: 32px; border-radius: 4px;"></div>
+                    <div style="display:flex; align-items:center; gap:8px;"><img src="images/ur_icon.jpg"
+                            style="height: 32px; border-radius: 4px; border:none;"> UR TOPIC LOGS</div>
                     <div style="display:flex; gap:5px;">
-                        <button class="icon-action-btn" onclick="pollDetailedLogs()" title="Refresh Logs">
-                            <img src="images/refresh_icon.png" alt="Refresh">
-                        </button>
+                        <button class="icon-action-btn" onclick="pollDetailedLogs()" title="Refresh Logs"><img
+                                src="images/refresh_icon.png"></button>
                         <button class="icon-action-btn" onclick="cmdSaveLog('urLogTbody', 'UR_Topic_Logs')"
-                            title="Save CSV">
-                            <img src="images/csv_icon.png" alt="Save">
-                        </button>
+                            title="Save CSV"><img src="images/csv_icon.png"></button>
                         <button class="icon-action-btn" onclick="document.getElementById('urLogTbody').innerHTML=''"
-                            title="Clear Logs">
-                            <img src="images/clear_icon.png" alt="Clear">
-                        </button>
+                            title="Clear Logs"><img src="images/clear_icon.png"></button>
                     </div>
                 </div>
                 <div class="log-table-container">
@@ -1427,23 +1625,24 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
 
-            <!-- ROS2 /rosout Global Log -->
-            <div class="panel" data-type="rosout">
+    <!-- ==================== 5. SYSTEM LOGS TAB ==================== -->
+    <div class="tab-content" id="tabSysLog">
+        <div
+            style="flex: 1; display: flex; flex-direction: column; padding: 15px; background-color: #f0f0f0; overflow: hidden;">
+            <div class="panel log-bot-3" data-type="rosout" style="flex:1;">
                 <div class="panel-header" style="padding-bottom: 5px;">
-                    <div><img src="images/system_serical_icon.png" style="height: 32px; border-radius: 4px;"></div>
+                    <div style="display:flex; align-items:center; gap:8px;"><img src="images/system_serical_icon.png"
+                            style="height: 32px; border-radius: 4px; border:none;"> ROS2 GLOBAL LOGS</div>
                     <div style="display:flex; gap:5px;">
-                        <button class="icon-action-btn" onclick="pollDetailedLogs()" title="Refresh Logs">
-                            <img src="images/refresh_icon.png" alt="Refresh">
-                        </button>
+                        <button class="icon-action-btn" onclick="pollDetailedLogs()" title="Refresh Logs"><img
+                                src="images/refresh_icon.png"></button>
                         <button class="icon-action-btn" onclick="cmdSaveLog('rosoutTbody', 'ROS2_System_Log')"
-                            title="Save CSV">
-                            <img src="images/csv_icon.png" alt="Save">
-                        </button>
+                            title="Save CSV"><img src="images/csv_icon.png"></button>
                         <button class="icon-action-btn" onclick="document.getElementById('rosoutTbody').innerHTML=''"
-                            title="Clear Logs">
-                            <img src="images/clear_icon.png" alt="Clear">
-                        </button>
+                            title="Clear Logs"><img src="images/clear_icon.png"></button>
                     </div>
                 </div>
                 <div class="log-table-container">
@@ -1464,7 +1663,6 @@
                     </div>
                 </div>
             </div>
-
         </div>
     </div>
 
@@ -1498,14 +1696,41 @@
 
     <!-- Inline script for UI interactions to prevent ReferenceErrors if external scripts fail -->
     <script>
+        // Unified 5-Tab Switcher
+        // Unified 5-Tab Switcher (Robust Fix)
         function switchTab(tab) {
-            document.getElementById('tabSetup').classList.toggle('active', tab === 'setup');
-            document.getElementById('tabMain').classList.toggle('active', tab === 'main');
-            document.getElementById('tabLogs').classList.toggle('active', tab === 'logs');
+            const tabs = ['setup', 'main', 'mirLog', 'urLog', 'sysLog'];
+            tabs.forEach(t => {
+                const id = 'tab' + t.charAt(0).toUpperCase() + t.slice(1);
+                const btnId = 'tabBtn' + t.charAt(0).toUpperCase() + t.slice(1);
+                const elTab = document.getElementById(id);
+                const elBtn = document.getElementById(btnId);
+                if (elTab) elTab.classList.toggle('active', t === tab);
+                if (elBtn) elBtn.classList.toggle('active', t === tab);
+            });
 
-            document.getElementById('tabBtnSetup').classList.toggle('active', tab === 'setup');
-            document.getElementById('tabBtnMain').classList.toggle('active', tab === 'main');
-            document.getElementById('tabBtnLogs').classList.toggle('active', tab === 'logs');
+            if (window.shared3DViewer && window.shared3DViewer.renderer) {
+                let targetId = (tab === 'setup') ? 'urdf-viewer-setup' : (tab === 'main' ? 'urdf-viewer-main' : null);
+                if (targetId) {
+                    const container = document.getElementById(targetId);
+                    if (container) {
+                        container.appendChild(window.shared3DViewer.renderer.domElement);
+                        setTimeout(() => {
+                            let w = container.clientWidth;
+                            let h = container.clientHeight;
+                            if (w > 0 && h > 0) {
+                                window.shared3DViewer.renderer.setSize(w, h, false);
+                                window.shared3DViewer.camera.aspect = w / h;
+                                window.shared3DViewer.camera.updateProjectionMatrix();
+                                window.shared3DViewer.controls.update();
+
+                                // [CRITICAL FIX] Force a render frame to prevent gray screen during tab switch
+                                window.shared3DViewer.renderer.render(window.shared3DViewer.scene, window.shared3DViewer.camera);
+                            }
+                        }, 100);
+                    }
+                }
+            }
         }
     </script>
     <script src="./renderer.js"></script>

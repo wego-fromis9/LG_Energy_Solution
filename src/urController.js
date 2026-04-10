@@ -63,8 +63,7 @@ class URController {
     }
 
     publishManualMode(state) { this.publishBoolValue(config.ur.manualModeTopic, state); }
-    publishUnlock(state) { this.publishBoolValue(config.ur.unlockTopic, state); }
-    publishEstop(state) { this.publishBoolValue(config.ur.estopTopic, state); }
+    publishLock(state) { this.publishBoolValue(config.ur.lockTopic, state); }
     publishFreedrive(state) { this.publishBoolValue(config.ur.freedriveTopic, state); }
     publishInitialPose(state) { this.publishBoolValue(config.ur.initialPoseTopic || '/ur_initial_pose', state); }
 
