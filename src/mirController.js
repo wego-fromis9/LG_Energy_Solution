@@ -245,7 +245,7 @@ class MiRController {
             [this.ctx, this.setupCtx].forEach(ctx => {
                 if (!ctx) return;
                 ctx.beginPath();
-                ctx.strokeStyle = "#888"; // Upgraded from green to neutral gray
+                ctx.strokeStyle = "#e7e5e5af"; // Upgraded from green to neutral gray
                 ctx.lineWidth = 1.0;
 
                 const startX = (((-ox / r) % gridSpacingPx) + gridSpacingPx) % gridSpacingPx;

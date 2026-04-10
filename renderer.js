@@ -96,7 +96,7 @@ window.toggleRemoteControl = () => {
     const rc = document.getElementById('urRemoteControl');
     const btn = document.getElementById('btnToggleRemote');
     if (!rc) return;
-    
+
     const isHidden = window.getComputedStyle(rc).display === 'none';
     if (isHidden) {
         rc.style.display = 'flex';
@@ -322,7 +322,7 @@ window.updateDashboardErrorState = (isError) => {
 // -----------------------------------------------
 window.logSystemEvent = (msg, level = 'Info') => {
     console.log(`[System] ${level}: ${msg}`);
-    
+
     // Route to System Logs Table
     const tbody = document.getElementById('rosoutTbody');
     if (tbody) {
@@ -337,7 +337,7 @@ window.logSystemEvent = (msg, level = 'Info') => {
         tbody.prepend(row);
         if (tbody.rows.length > 100) tbody.deleteRow(100);
     }
-    
+
     // Auto-Toast for Errors/Warns if needed
     if (level === 'Error') showToast(`[System Error] ${msg}`, 'err');
 };
@@ -345,15 +345,15 @@ window.logSystemEvent = (msg, level = 'Info') => {
 window.showToast = (msg, type = 'msg') => {
     const container = document.getElementById('toastContainer');
     if (!container) return;
-    
+
     // Constraint: Limit toastContainer to showing only the newest popup
     container.innerHTML = '';
-    
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     toast.innerHTML = `<span>${msg}</span>`;
     container.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.style.opacity = '0';
         setTimeout(() => toast.remove(), 500);
@@ -563,7 +563,7 @@ function drawProtectiveScanOverlay(img) {
             if (img && chkLidar && chkLidar.checked) {
                 ctx.save();
                 // [CRITICAL FIX] Corrected the 90-degree clockwise offset by rotating -90 degrees (-Math.PI / 2)
-                ctx.rotate(Math.PI - Math.PI / 4);
+                ctx.rotate(-Math.PI / 12);
 
                 // ctx.scale(-1, 1);
 
@@ -706,7 +706,7 @@ window.pollDetailedLogs = () => {
                     lastMirState = stat.state_text;
                     lastMissionText = stat.mission_text;
                     logMirSystemData(`상태 변경: ${stat.state_text} (${stat.mission_text || 'Idle'})`, 'info');
-                    
+
                     // [NEW] Update Active Waypoint/Mission Text in Main Dashboard
                     const activeTextEl = document.getElementById('activeMissionText');
                     if (activeTextEl) {
@@ -727,17 +727,17 @@ window.pollDetailedLogs = () => {
 
                 updateLED('led-mir-state', mirStateColor);
                 updateLED('led-mir-play', ([3, 5].includes(stat.state_id)) ? 'ok' : '');
-                
+
                 const isMissionActive = stat.mission_text && stat.mission_text !== 'None' && stat.mission_text !== '...';
                 updateLED('led-mir-miss', isMissionActive ? 'ok' : '');
 
                 updateLED('led-mir-state-main', mirStateColor);
                 const mirMainText = document.getElementById('mir-state-text-main');
                 if (mirMainText) mirMainText.textContent = stat.state_text || 'Unknown';
-                
+
                 // [NEW] Explicit Play/Pause LED: Green if State 3 (Play/Ready), Yellow if State 4 (Pause)
                 updateLED('led-mir-play', stat.state_id === 3 ? 'ok' : 'warn');
-                
+
                 updateLED('led-mir-err', activeErrors.length > 0 ? 'err' : 'ok');
 
                 activeErrors.forEach(err => {
@@ -1054,7 +1054,7 @@ window.cmdTogglePatrolCheckbox = () => {
 window.cmdMirPlayPause = async () => {
     // If currently operating (3 or 5), command Pause (4). Otherwise, command Ready (3).
     const targetState = (currentMirStateId === 3 || currentMirStateId === 5) ? 4 : 3;
-    
+
     // Fast UI sync
     const tempColor = targetState === 3 ? 'ok' : '';
     updateLED('led-mir-play', tempColor);
@@ -1070,7 +1070,7 @@ window.cmdMirPlayPause = async () => {
             headers: headers,
             body: JSON.stringify({ state_id: targetState })
         });
-        
+
         if (res.ok) {
             const cmdText = targetState === 3 ? "진행 (Play)" : "정지 (Pause)";
             logSystemEvent(`${cmdText} 명령 전송`, 'Info');
@@ -1080,7 +1080,7 @@ window.cmdMirPlayPause = async () => {
             showToast("상태 변경 실패", "error");
             if (typeof window.pollDetailedLogs === 'function') window.pollDetailedLogs();
         }
-    } catch(e) {
+    } catch (e) {
         showToast("네트워크 오류 발생", "error");
     }
 };
@@ -1318,7 +1318,7 @@ window.initROS3DViewer = () => {
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setClearColor(0xebebeb, 1);
-        
+
         renderer.domElement.style.width = '100%';
         renderer.domElement.style.height = '100%';
         renderer.domElement.style.display = 'block';
@@ -1356,12 +1356,12 @@ window.initROS3DViewer = () => {
                         window.shared3DViewer.renderer.setSize(width, height, false);
                         window.shared3DViewer.camera.aspect = width / height;
                         window.shared3DViewer.camera.updateProjectionMatrix();
-                        window.shared3DViewer.renderer.render(scene, camera); 
+                        window.shared3DViewer.renderer.render(scene, camera);
                     }
                 }
             }
         });
-        
+
         const elSetup = document.getElementById('urdf-viewer-setup');
         const elMain = document.getElementById('urdf-viewer-main');
         if (elSetup) resizeObserver.observe(elSetup);
@@ -1394,7 +1394,7 @@ window.initROS3DViewer = () => {
 
         const loader = new LoaderClass(manager);
         loader.packages = { 'ur_description': `file://${__dirname}/src/Universal_Robots_ROS2_Description` };
-        
+
         const loadRobot = (urdfData) => {
             try {
                 const robot = loader.parse(urdfData);
@@ -1413,19 +1413,19 @@ window.initROS3DViewer = () => {
         // [CRITICAL FIX] FILE PATH DETECTION + ALERT
         const path1 = path.join(__dirname, 'ur5e.urdf');
         const path2 = path.join(__dirname, 'src', 'ur5e.urdf');
-        
+
         fs.readFile(path1, 'utf8', (err, data) => {
-            if (err) { 
+            if (err) {
                 fs.readFile(path2, 'utf8', (err2, data2) => {
-                    if (err2) { 
+                    if (err2) {
                         const errorMsg = `[3D Viewer Error] URDF file could not be found.\nAttempted paths:\n1. ${path1}\n2. ${path2}\nError: ${err2.message}`;
                         console.error(errorMsg);
                         alert(errorMsg); // Push to OS UI
-                        return; 
+                        return;
                     }
                     loadRobot(data2);
                 });
-                return; 
+                return;
             }
             loadRobot(data);
         });
@@ -1457,7 +1457,7 @@ window.initROS3DViewer = () => {
                 window.shared3DViewer.renderer.render(window.shared3DViewer.scene, window.shared3DViewer.camera);
             }
         };
-        
+
         renderLoop(); // Start loop
 
     } catch (e) {
@@ -1596,7 +1596,7 @@ function connectMirWebSocket() {
 
     ws.onopen = () => {
         console.log(`[MiR WebSocket] Connected to ${host}:9090 (Diagnostics Mode)`);
-        
+
         // Unified Log Subscription
         ws.send(JSON.stringify({
             "op": "subscribe",
@@ -1612,7 +1612,7 @@ function connectMirWebSocket() {
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            
+
             // 1. Log Routing (/rosout)
             if (data.topic === "/rosout" && data.msg && data.msg.level !== undefined) {
                 const log = data.msg;
@@ -1712,7 +1712,7 @@ window.onload = () => {
         const levelCode = msg.level || 2;
         const level = (text.toLowerCase().includes("error") || levelCode >= 8) ? "ERROR" : "INFO";
         const nodeName = msg.name || 'UR_Node';
-        
+
         // Route UR Errors to System Logs
         if (level === 'ERROR') {
             logSystemEvent(`UR Error: ${text}`, 'Error');
