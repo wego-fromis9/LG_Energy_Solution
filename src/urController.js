@@ -16,8 +16,10 @@ class URController {
             rosout: null,
             log: null,
             camera: null,
-            lidar: null
+            lidar: null,
+            status: null
         };
+        this.statusProcess = null;
     }
 
     setLogCallback(cb) {
@@ -282,6 +284,33 @@ class URController {
 
     stopLidarSubscriber() {
         if (this.lidarProcess) { this.lidarProcess.kill(); this.lidarProcess = null; }
+    }
+
+    // Echo UR Status Topic (std_msgs/msg/String)
+    startStatusSubscriber(callback) {
+        if (this.statusProcess) return;
+        const cmd = `source /opt/ros/humble/setup.bash && stdbuf -oL ros2 topic echo ${config.ur.statusTopic} std_msgs/msg/String`;
+        this.statusProcess = spawn('bash', ['-c', cmd]);
+        let buf = "";
+        this.statusProcess.stdout.on('data', (d) => {
+            buf += d.toString();
+            const parts = buf.split('---');
+            while(parts.length > 1) {
+                const chunk = parts.shift();
+                buf = parts.join('---');
+                const m = chunk.match(/data:\s*([^\n]+)/);
+                if (m) {
+                    this.lastHeartbeat.status = new Date();
+                    const text = m[1].trim().replace(/['"]/g, '');
+                    if (callback) callback(text);
+                }
+            }
+        });
+        this.statusProcess.on('close', () => { this.statusProcess = null; });
+    }
+
+    stopStatusSubscriber() {
+        if (this.statusProcess) { this.statusProcess.kill(); this.statusProcess = null; }
     }
 }
 

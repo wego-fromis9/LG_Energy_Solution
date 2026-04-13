@@ -7,7 +7,6 @@ const os = require('os');
 
 // DOM Elements
 const elWaypointBox = document.getElementById('waypointCheckboxList');
-const elScenarioGrid = document.getElementById('scenarioGrid');
 const mapCanvas = document.getElementById('mapCanvas');
 
 // -----------------------------------------------
@@ -320,7 +319,7 @@ window.updateDashboardErrorState = (isError) => {
 // -----------------------------------------------
 // Unified Logging & Notifications
 // -----------------------------------------------
-window.logSystemEvent = (msg, level = 'Info') => {
+window.logSystemEvent = (msg, level = 'Info', source = 'Local UI') => {
     console.log(`[System] ${level}: ${msg}`);
 
     // Route to System Logs Table
@@ -331,15 +330,20 @@ window.logSystemEvent = (msg, level = 'Info') => {
         row.innerHTML = `
             <td>${now}</td>
             <td style="color: ${level === 'Error' ? '#ff5252' : level === 'Warn' ? '#ff9800' : '#444'}; font-weight:700;">${level}</td>
-            <td>Local UI</td>
+            <td>${source}</td>
             <td>${msg}</td>
         `;
         tbody.prepend(row);
         if (tbody.rows.length > 100) tbody.deleteRow(100);
     }
 
-    // Auto-Toast for Errors/Warns if needed
-    if (level === 'Error') showToast(`[System Error] ${msg}`, 'err');
+    // Auto-Toast & Global Notifications
+    if (level === 'Error') {
+        showToast(`[System Error] ${msg}`, 'err');
+        addNotification(`[${source}] ${msg}`, 'err');
+    } else if (level === 'Warn') {
+        addNotification(`[${source}] ${msg}`, 'warn');
+    }
 };
 
 window.showToast = (msg, type = 'msg') => {
@@ -417,27 +421,25 @@ function pollTopicHeartbeats() {
     const alive = (ts, timeout = 5000) => ts && (now - ts) < timeout;
 
     updateTopicStatus('topic-log-setup', alive(hb.log, 60000), config.ur.logTopic);
-    updateTopicStatus('topic-estop-setup', true, config.ur.estopTopic);
+    updateTopicStatus('topic-estop-setup', alive(hb.status), config.ur.statusTopic); // Re-labeling Estop topic slot to Status
     updateTopicStatus('topic-joint-setup', alive(hb.joint), config.ur.jointTopic);
     updateTopicStatus('topic-rosout-setup', alive(hb.rosout, 60000), config.ur.rosoutTopic);
     updateTopicStatus('topic-camera-setup', alive(hb.camera), config.ur.cameraTopic);
 
-    // Add LED logic for UR
-    updateLED('led-ur-joint', alive(hb.joint) ? 'ok' : 'err');
-    updateLED('led-ur-cam', alive(hb.camera) ? 'ok' : 'err');
-
-    // [CRITICAL FIX] UR Priority State
+    // [STRICT LED RULE] Offline = Gray (Class: "")
+    const statusAlive = alive(hb.status);
     let urStateColor = '';
-    let urStateText = 'UNKNOWN';
+    let urStateText = 'OFFLINE';
 
-    if (isUrEstop) {
-        urStateColor = 'err'; urStateText = 'E-STOP';
-    } else if (isUrUnlock) {
-        urStateColor = 'ok'; urStateText = 'UNLOCKED';
-    } else if (isUrFreedrive) {
-        urStateColor = 'info'; urStateText = 'FREEDRIVE';
-    } else {
-        urStateColor = 'warn'; urStateText = 'LOCKED';
+    if (statusAlive && window.urStatusString) {
+        const s = window.urStatusString.toUpperCase();
+        if (s === 'LOCKED') {
+            urStateColor = 'err'; urStateText = 'LOCKED';
+        } else if (s === 'FREEDRIVE') {
+            urStateColor = 'warn'; urStateText = 'FREEDRIVE';
+        } else if (s === 'UNLOCKED') {
+            urStateColor = 'ok'; urStateText = 'UNLOCKED';
+        }
     }
 
     updateLED('led-ur-state', urStateColor);
@@ -445,21 +447,22 @@ function pollTopicHeartbeats() {
     const urMainText = document.getElementById('ur-state-text-main');
     if (urMainText) urMainText.textContent = urStateText;
 
+    // Joint & Camera LEDs
+    updateLED('led-ur-joint', alive(hb.joint) ? 'ok' : '');
+    updateLED('led-ur-cam', alive(hb.camera) ? 'ok' : '');
+
     // UR Logs Tab Bindings
-    updateLED('log-ur-lock-led', isUrUnlock ? 'ok' : 'warn');
+    updateLED('log-ur-lock-led', urStateText === 'UNLOCKED' ? 'ok' : (urStateText === 'OFFLINE' ? '' : 'warn'));
     const elUrLock = document.getElementById('log-ur-lock-text');
-    if (elUrLock) elUrLock.textContent = isUrUnlock ? "UNLOCKED" : "LOCKED";
+    if (elUrLock) elUrLock.textContent = urStateText === 'UNLOCKED' ? "UNLOCKED" : (urStateText === 'OFFLINE' ? "OFFLINE" : "LOCKED");
 
-    updateLED('log-ur-estop-led', isUrEstop ? 'err' : 'ok');
+    updateLED('log-ur-estop-led', urStateText === 'LOCKED' ? 'err' : (urStateText === 'OFFLINE' ? '' : 'ok'));
     const elUrEstop = document.getElementById('log-ur-estop-text');
-    if (elUrEstop) elUrEstop.textContent = isUrEstop ? "ENGAGED" : "CLEAR";
+    if (elUrEstop) elUrEstop.textContent = urStateText === 'LOCKED' ? "STOPPED" : (urStateText === 'OFFLINE' ? "—" : "CLEAR");
 
-    updateLED('log-ur-mode-led', isUrManualMode ? 'warn' : 'ok');
+    updateLED('log-ur-mode-led', urStateText === 'FREEDRIVE' ? 'warn' : (urStateText === 'OFFLINE' ? '' : 'ok'));
     const elUrMode = document.getElementById('log-ur-mode-text');
-    if (elUrMode) elUrMode.textContent = isUrManualMode ? "MANUAL" : "AUTO";
-
-    const elUrErr = document.getElementById('log-ur-errors');
-    if (elUrErr) elUrErr.textContent = isUrEstop ? "1" : "0";
+    if (elUrMode) elUrMode.textContent = urStateText === 'FREEDRIVE' ? "FREEDRIVE" : (urStateText === 'OFFLINE' ? "—" : "NORMAL");
 }
 
 // -----------------------------------------------
@@ -722,21 +725,32 @@ window.pollDetailedLogs = () => {
                     });
                 }
 
+                // [FIX] Correct parsing of MiR model name
+                const modelEl = document.getElementById('log-mir-model');
+                if (modelEl) {
+                    modelEl.innerText = stat.robot_name || stat.robot_model || "MiR AMR";
+                }
+
                 // Sync global state safely
                 currentMirStateId = stat.state_id;
 
+                // [FIX] Declare mirStateColor based on real-time state and errors
+                let mirStateColor = 'ok';
+                if (stat.state_id === 4) mirStateColor = 'warn';
+                else if (stat.state_id >= 10 || activeErrors.length > 0) mirStateColor = 'err';
+                else if (stat.state_id === 3 || stat.state_id === 5) mirStateColor = 'ok';
+
                 updateLED('led-mir-state', mirStateColor);
-                updateLED('led-mir-play', ([3, 5].includes(stat.state_id)) ? 'ok' : '');
+                updateLED('led-mir-state-main', mirStateColor);
+
+                // [FIX] Explicit Play/Pause LED: Green (ok) if Executing/Ready, Yellow (warn) if Paused/Other
+                updateLED('led-mir-play', (stat.state_id === 3 || stat.state_id === 5) ? 'ok' : 'warn');
 
                 const isMissionActive = stat.mission_text && stat.mission_text !== 'None' && stat.mission_text !== '...';
                 updateLED('led-mir-miss', isMissionActive ? 'ok' : '');
 
-                updateLED('led-mir-state-main', mirStateColor);
                 const mirMainText = document.getElementById('mir-state-text-main');
                 if (mirMainText) mirMainText.textContent = stat.state_text || 'Unknown';
-
-                // [NEW] Explicit Play/Pause LED: Green if State 3 (Play/Ready), Yellow if State 4 (Pause)
-                updateLED('led-mir-play', stat.state_id === 3 ? 'ok' : 'warn');
 
                 updateLED('led-mir-err', activeErrors.length > 0 ? 'err' : 'ok');
 
@@ -1018,18 +1032,13 @@ function handleCheckboxChange(checkboxElem, guid) {
     }
 }
 
-function renderScenarioButtons() {
-    config.ur.scenarios.forEach(sc => {
-        const btn = document.createElement('button');
-        btn.className = "scenario-btn";
-        btn.innerText = sc.label;
-        btn.onclick = () => {
-            urCtrl.publishScenarioById(sc.id);
-            logUr(`[SCENARIO] Calling ID ${sc.id} (${sc.label}) → ${config.ur.scenarioTopic}`);
-        };
-        elScenarioGrid.appendChild(btn);
-    });
-}
+window.cmdScenario = (id) => {
+    if (typeof urCtrl.publishScenarioById === 'function') {
+        urCtrl.publishScenarioById(id);
+        logSystemEvent(`Scenario ${id} Triggered`, "Info");
+        showToast(`Scenario ${id} Triggered`, "msg");
+    }
+};
 
 window.cmdRunCheckedWaypoints = async () => {
     if (checkedSequence.length === 0) return logMirSystemData("실행 실패: 선택된 웨이포인트가 없습니다.", "err");
@@ -1051,38 +1060,14 @@ window.cmdTogglePatrolCheckbox = () => {
 };
 
 // [CRITICAL FIX] Safe toggle avoiding invalid states
-window.cmdMirPlayPause = async () => {
-    // If currently operating (3 or 5), command Pause (4). Otherwise, command Ready (3).
-    const targetState = (currentMirStateId === 3 || currentMirStateId === 5) ? 4 : 3;
+window.cmdMirPlay = () => {
+    urCtrl.publishBoolValue(config.ur.mirPlayTopic, true);
+    logSystemEvent("MiR Play Command Sent (ROS2)", "Info");
+};
 
-    // Fast UI sync
-    const tempColor = targetState === 3 ? 'ok' : '';
-    updateLED('led-mir-play', tempColor);
-    updateLED('led-mir-state-main', tempColor);
-    const mirMainText = document.getElementById('mir-state-text-main');
-    if (mirMainText) mirMainText.textContent = targetState === 3 ? 'Ready' : 'Pause';
-
-    try {
-        const host = mirCtrl.getBaseUrl();
-        const headers = mirCtrl.getAuthHeader();
-        const res = await fetch(`${host}/status`, {
-            method: 'PUT',
-            headers: headers,
-            body: JSON.stringify({ state_id: targetState })
-        });
-
-        if (res.ok) {
-            const cmdText = targetState === 3 ? "진행 (Play)" : "정지 (Pause)";
-            logSystemEvent(`${cmdText} 명령 전송`, 'Info');
-            showToast(`MiR Status: ${targetState === 3 ? 'PLAY' : 'PAUSED'}`, "msg");
-            if (typeof window.pollDetailedLogs === 'function') window.pollDetailedLogs();
-        } else {
-            showToast("상태 변경 실패", "error");
-            if (typeof window.pollDetailedLogs === 'function') window.pollDetailedLogs();
-        }
-    } catch (e) {
-        showToast("네트워크 오류 발생", "error");
-    }
+window.cmdMirPause = () => {
+    urCtrl.publishBoolValue(config.ur.mirPlayTopic, false);
+    logSystemEvent("MiR Pause Command Sent (ROS2)", "Warn");
 };
 
 window.cmdMirDock = () => {
@@ -1118,6 +1103,7 @@ window.cmdMirClearErr = async () => {
 window.cmdAddMissionToQueue = async () => {
     if (checkedSetupMissions.length === 0) return alert('추가할 미션을 체크해주세요.');
 
+    /* [LEGACY REST API LOGIC - Commented Out]
     try {
         const host = getMirHost();
         const headers = getMirHeaders();
@@ -1142,7 +1128,6 @@ window.cmdAddMissionToQueue = async () => {
         if (failCount > 0) logMirSystemData(`미션 ${failCount}개 추가 실패 (로봇 상태 확인)`, 'err');
 
         checkedSetupMissions = [];
-
         window.pollDetailedLogs();
         setTimeout(() => { window.pollDetailedLogs(); }, 1000);
         setTimeout(() => { window.pollDetailedLogs(); }, 2000);
@@ -1150,15 +1135,28 @@ window.cmdAddMissionToQueue = async () => {
     } catch (e) {
         logMirSystemData(`미션 추가 중 오류: ${e.message}`, "err");
     }
+    */
+
+    // [NEW] ROS2 Topic Migration
+    urCtrl.publishBoolTrigger(config.ur.mirAddTopic);
+    logSystemEvent("MiR Add Mission Command Sent (ROS2)", "Info");
+    showToast("Mission Add Triggered", "msg");
 };
 
 window.cmdClearMissionQueue = async () => {
+    /* [LEGACY REST API LOGIC - Commented Out]
     if (confirm("정말로 미션 큐를 모두 삭제하시겠습니까?")) {
         try {
             const res = await fetch(`http://${getMirHost()}/api/v2.0.0/mission_queue`, { method: 'DELETE', headers: getMirHeaders() });
             if (res.ok) logMirSystemData("미션 큐가 모두 삭제되었습니다.", "warn");
         } catch (e) { }
     }
+    */
+
+    // [NEW] ROS2 Topic Migration
+    urCtrl.publishBoolTrigger(config.ur.mirClearTopic);
+    logSystemEvent("MiR Clear Mission Command Sent (ROS2)", "Warn");
+    showToast("Mission Clear Triggered", "warn");
 };
 
 // -----------------------------------------------
@@ -1303,7 +1301,22 @@ window.initROS3DViewer = () => {
             }
             if (Object.keys(newJoints).length > 0) {
                 globalTargetJoints = newJoints;
+                
+                // [FIX] Force update robot visual and trigger immediate frame render
+                if (window.shared3DViewer && window.shared3DViewer.robot) {
+                    for (const name in newJoints) {
+                        window.shared3DViewer.robot.setJointValue(name, newJoints[name]);
+                    }
+                    window.shared3DViewer.renderer.render(window.shared3DViewer.scene, window.shared3DViewer.camera);
+                }
+                updateLED('led-ur-joint', 'ok');
             }
+        });
+
+        // [NEW] Unified UR Status Monitor
+        window.urStatusString = "OFFLINE";
+        urCtrl.startStatusSubscriber((status) => {
+            window.urStatusString = status;
         });
 
         const jointCalibration = {
@@ -1502,24 +1515,6 @@ function startUrStateSubscribers() {
     // Legacy subscriber removed in favor of logical status indicators
 }
 
-function startUrEstopMonitor() {
-    const { spawn } = require('child_process');
-    const proc = spawn('bash', ['-c', `source /opt/ros/humble/setup.bash && stdbuf -oL ros2 topic echo ${config.ur.estopTopic} std_msgs/msg/Bool`]);
-    proc.stdout.on('data', (d) => {
-        const match = d.toString().match(/data:\s*(true|false)/i);
-        if (match) {
-            const isEstopFromTopic = match[1].toLowerCase() === 'true';
-
-            if (isUrEstop && !isEstopFromTopic) return;
-
-            const el = document.getElementById('topic-estop-main');
-            if (el) {
-                el.textContent = isEstopFromTopic ? 'ENGAGED' : 'OK';
-                el.style.color = isEstopFromTopic ? '#ff4d4d' : '#4ade80';
-            }
-        }
-    });
-}
 
 function wireMapCheckboxes() {
     const wire = (id, field, peerId) => {
@@ -1737,14 +1732,12 @@ window.onload = () => {
     });
 
     startUrStateSubscribers();
-    startUrEstopMonitor();
     wireMapCheckboxes();
     setInterval(pollTopicHeartbeats, 2000);
     setTimeout(() => { window.fetchAndRenderUserMissions(); }, 1500);
     setInterval(() => { window.pollDetailedLogs(); }, 1000);
     setInterval(() => { fetchProtectiveScanAPI(); }, 200);
     connectMirWebSocket();
-    renderScenarioButtons();
     initROS3DViewer();
     updateMapScaleBar();
     logUr("[INFO] ROS2 pipeline initialized.");

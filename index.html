@@ -1134,7 +1134,7 @@
                 <!-- Missions (Flex: 1.5) -->
                 <div class="panel" data-type="mir" style="flex: 1.5; display:flex; flex-direction:column;">
                     <div class="panel-header">
-                        <div><img src="images/mission_icon.png" class="header-icon"> Mission</div>
+                        <div>Mission Status</div>
                         <button class="icon-action-btn" onclick="fetchAndRenderUserMissions()" title="Refresh Missions">
                             <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
@@ -1144,7 +1144,6 @@
                     </div>
                     <div class="flex-row">
                         <button class="btn-mir" style="flex: 1;" onclick="cmdAddMissionToQueue()">Add</button>
-                        <button class="btn-mir" style="flex: 1;" onclick="cmdMirPlayPause()">Play/Pause</button>
                         <button class="btn-danger" style="flex: 1;" onclick="cmdClearMissionQueue()">Clear</button>
                     </div>
                 </div>
@@ -1262,7 +1261,7 @@
                 <!-- Waypoint Panel (Status container removed to save space) -->
                 <div class="panel" data-type="mir" style="flex: 1; display:flex; flex-direction:column; min-height:0;">
                     <div class="panel-header">
-                        <div><img src="images/waypoint_icon.png" class="header-icon"> WAYPOINT STATUS</div>
+                        <div>WAYPOINT STATUS</div>
                         <button class="icon-action-btn" onclick="cmdRefreshSetupMap()" title="Refresh">
                             <img src="images/refresh_icon.png" alt="Refresh">
                         </button>
@@ -1296,7 +1295,12 @@
                     <div id="urdf-viewer-main" style="flex:1; min-height:150px; background:#ebebeb; border-radius:4px;">
                     </div>
                     <div class="flex-row" style="margin-top:10px;">
-                        <button class="btn-ur-action" style="flex:1;" onclick="cmdUrEstop()">E-Stop</button>
+                        <button class="btn-ur-action" style="flex:1;" onclick="cmdUrLock()">
+                            <img src="images/lock_icon.png" class="btn-img-icon"> LOCK
+                        </button>
+                        <button class="btn-ur-action" style="flex:1;" onclick="cmdUrUnlock()">
+                            <img src="images/unlock_icon.png" class="btn-img-icon"> UNLOCK
+                        </button>
                         <button class="btn-ur-action" style="flex:1;" onclick="cmdUrFreedrive()">Freedrive</button>
                     </div>
                 </div>
@@ -1344,6 +1348,12 @@
                                         <button class="scenario-btn" onclick="cmdScenario(1)">Scenario 1</button>
                                         <button class="scenario-btn" onclick="cmdScenario(2)">Scenario 2</button>
                                         <button class="scenario-btn" onclick="cmdScenario(3)">Scenario 3</button>
+                                        <button class="btn-mir"
+                                            style="margin-top:5px; height:32px; font-size:11px; width:100%;"
+                                            onclick="cmdMirPlay()">PLAY</button>
+                                        <button class="btn-mir"
+                                            style="margin-top:5px; height:32px; font-size:11px; width:100%;"
+                                            onclick="cmdMirPause()">PAUSE</button>
                                         <button class="btn-danger"
                                             style="margin-top:5px; height:32px; font-size:11px; width:100%;"
                                             onclick="cmdMirCancel()">CANCEL</button>
