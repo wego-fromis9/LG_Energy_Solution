@@ -175,6 +175,17 @@
             font-size: 13px;
         }
 
+        /* [NEW] Large Touch Target for Notification Clear Button (1.5x) */
+        .dropdown-header .icon-action-btn {
+            width: 60px;
+            height: 60px;
+        }
+
+        .dropdown-header .icon-action-btn img {
+            height: 21px !important; /* Overriding inline height:14px */
+            vertical-align: middle;
+        }
+
         .dropdown-list {
             overflow-y: auto;
             flex: 1;
@@ -508,7 +519,7 @@
         }
 
         .tool-btn img {
-            height: 32px;
+            height: 40px;
             width: auto;
             opacity: 0.5;
             /* 기본 상태: 반투명 연하게 */
@@ -584,8 +595,28 @@
         }
 
         .btn-danger {
-            border: 1px solid #aaa;
-            color: #555;
+            border: 1px solid #e53935;
+            color: #e53935;
+        }
+
+        /* [NEW] Unified Disabled State for All Action Buttons */
+        .btn-mir:disabled,
+        .btn-ur:disabled,
+        .btn-danger:disabled,
+        .scenario-btn:disabled,
+        .btn-ur-action:disabled {
+            background-color: #f5f5f5 !important;
+            color: #a0a0a0 !important;
+            border-color: #dcdcdc !important;
+            cursor: not-allowed !important;
+            box-shadow: none !important;
+            transform: none !important;
+        }
+
+        .btn-mir:disabled .btn-img-icon,
+        .btn-ur:disabled .btn-img-icon,
+        .btn-ur-action:disabled .btn-img-icon {
+            filter: grayscale(100%) opacity(40%);
         }
 
         /* 내부에 포함된 아이콘 이미지 (기본 색상 유지) */
@@ -612,18 +643,23 @@
             filter: brightness(0) invert(1);
         }
 
-        .btn-danger:hover {
-            background: #666;
+        .btn-danger:hover:not(:disabled) {
+            background: #e53935;
             color: #ffffff;
-            border-color: #555;
+            border-color: #e53935;
+            box-shadow: 0 2px 6px rgba(229, 57, 53, 0.3);
+        }
+
+        .btn-danger:hover:not(:disabled) .btn-img-icon {
+            filter: brightness(0) invert(1);
         }
 
         /* 클릭 순간(Active) 살짝 눌리는 물리적 피드백 */
-        .btn-mir:active,
-        .btn-ur:active,
-        .scenario-btn:active,
-        .btn-ur-action:active,
-        .btn-danger:active {
+        .btn-mir:active:not(:disabled),
+        .btn-ur:active:not(:disabled),
+        .scenario-btn:active:not(:disabled),
+        .btn-ur-action:active:not(:disabled),
+        .btn-danger:active:not(:disabled) {
             transform: scale(0.96);
             box-shadow: none;
         }

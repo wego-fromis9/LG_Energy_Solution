@@ -64,6 +64,36 @@ function updateLED(id, status) {
     el.className = `led ${status}`; // 'ok', 'err', 'warn', or ''
 }
 
+// [NEW] Safety Interlock for UR Control Buttons
+function updateUrButtonSafety() {
+    const status = (window.urStatusString || 'OFFLINE').toUpperCase();
+    
+    const btnLock = document.querySelectorAll('button[onclick="cmdUrLock()"]');
+    const btnUnlock = document.querySelectorAll('button[onclick="cmdUrUnlock()"]');
+    const btnFreedrive = document.querySelectorAll('button[onclick="cmdUrFreedrive()"]');
+    const btnInitial = document.querySelectorAll('button[onclick="cmdSetInitialPosition()"]');
+
+    const setDisabled = (list, val) => list.forEach(b => b.disabled = val);
+
+    if (status === 'LOCKED') {
+        setDisabled(btnLock, true);
+        setDisabled(btnUnlock, false);
+        setDisabled(btnFreedrive, true);
+        setDisabled(btnInitial, true);
+    } else if (status === 'UNLOCKED' || status === 'FREEDRIVE') {
+        setDisabled(btnLock, false);
+        setDisabled(btnUnlock, false);
+        setDisabled(btnFreedrive, false);
+        setDisabled(btnInitial, false);
+    } else {
+        // OFFLINE or Unknown
+        setDisabled(btnLock, true);
+        setDisabled(btnUnlock, true);
+        setDisabled(btnFreedrive, true);
+        setDisabled(btnInitial, true);
+    }
+}
+
 window.toggleAdjustMode = () => {
     isAdjustMode = !isAdjustMode;
     const btn = document.getElementById('btnAdjustMode');
@@ -446,6 +476,9 @@ function pollTopicHeartbeats() {
     updateLED('led-ur-state-main', urStateColor);
     const urMainText = document.getElementById('ur-state-text-main');
     if (urMainText) urMainText.textContent = urStateText;
+
+    // Trigger safety interlock sync
+    updateUrButtonSafety();
 
     // Joint & Camera LEDs
     updateLED('led-ur-joint', alive(hb.joint) ? 'ok' : '');
@@ -1317,6 +1350,7 @@ window.initROS3DViewer = () => {
         window.urStatusString = "OFFLINE";
         urCtrl.startStatusSubscriber((status) => {
             window.urStatusString = status;
+            updateUrButtonSafety();
         });
 
         const jointCalibration = {
